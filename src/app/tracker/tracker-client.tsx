@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowUpRight, BookMarked, Check, ChevronDown, Trash2 } from "lucide-react";
+import { AlertCircle, ArrowUpRight, BookMarked, Check, ChevronDown, Trash2 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -34,6 +34,7 @@ type LocalEntry = {
 
 const TRACKER_KEY = "labrecon:tracker";
 const SAVED_KEY = "labrecon:saved";
+const DEMO_SEEDED_KEY = "labrecon:demo-seeded";
 
 function readEntries(validIds: Set<number>): LocalEntry[] {
   try {
@@ -42,7 +43,6 @@ function readEntries(validIds: Set<number>): LocalEntry[] {
     );
     const trackedIds = new Set(tracker.map((e) => e.labId));
 
-    // Merge legacy labrecon:saved IDs not yet in tracker
     const legacyIds: number[] = JSON.parse(
       localStorage.getItem(SAVED_KEY) ?? "[]"
     );
@@ -66,11 +66,42 @@ function readEntries(validIds: Set<number>): LocalEntry[] {
 
 function persistEntries(entries: LocalEntry[]) {
   localStorage.setItem(TRACKER_KEY, JSON.stringify(entries));
-  // Keep labrecon:saved in sync so save buttons on cards stay accurate
   localStorage.setItem(
     SAVED_KEY,
     JSON.stringify(entries.map((e) => e.labId))
   );
+}
+
+// Demo data seeder — injects 8 entries with realistic statuses for demo
+function seedDemoData(validIds: Set<number>): LocalEntry[] {
+  const today = new Date("2026-04-13T10:00:00Z");
+  const daysAgo = (n: number) => new Date(today.getTime() - n * 86400000).toISOString();
+
+  // Use first 8 valid lab IDs (Tier 1 labs come first in DB)
+  const availableIds = [...validIds].slice(0, 8);
+  if (availableIds.length < 8) return [];
+
+  const [id1, id2, id3, id4, id5, id6, id7, id8] = availableIds;
+
+  const entries: LocalEntry[] = [
+    // 2 Saved
+    { labId: id1, status: "saved", lastUpdated: daysAgo(3), dateSent: null },
+    { labId: id2, status: "saved", lastUpdated: daysAgo(1), dateSent: null },
+    // 3 Sent (within last 2 weeks)
+    { labId: id3, status: "sent", lastUpdated: daysAgo(12), dateSent: daysAgo(12) },
+    { labId: id4, status: "sent", lastUpdated: daysAgo(8), dateSent: daysAgo(8) },
+    { labId: id5, status: "sent", lastUpdated: daysAgo(5), dateSent: daysAgo(5) },
+    // 1 Responded (3 days ago)
+    { labId: id6, status: "responded", lastUpdated: daysAgo(3), dateSent: daysAgo(11) },
+    // 1 No Response (20 days ago — triggers follow-up banner)
+    { labId: id7, status: "no_response", lastUpdated: daysAgo(20), dateSent: daysAgo(20) },
+    // 1 Meeting
+    { labId: id8, status: "meeting", lastUpdated: daysAgo(1), dateSent: daysAgo(14) },
+  ];
+
+  persistEntries(entries);
+  localStorage.setItem(DEMO_SEEDED_KEY, "1");
+  return entries;
 }
 
 // ── Status config ─────────────────────────────────────────────────────────────
@@ -122,7 +153,7 @@ function formatDate(iso: string): string {
   const diff = Math.floor((now.getTime() - d.getTime()) / 86400000);
   if (diff === 0) return "Today";
   if (diff === 1) return "Yesterday";
-  if (diff < 7) return d.toLocaleDateString("en-US", { weekday: "short" });
+  if (diff < 7) return `${diff}d ago`;
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
@@ -142,13 +173,26 @@ function StatusBadge({ status }: { status: TrackerStatus }) {
   );
 }
 
+// ── Follow-up banner ──────────────────────────────────────────────────────────
+
+function FollowUpBanner({ piName, daysSinceContact }: { piName: string; daysSinceContact: number }) {
+  return (
+    <div className="flex items-center gap-3 px-4 py-3 mx-4 sm:mx-8 mb-4 rounded-[4px] bg-amber-500/5 border border-amber-500/15">
+      <AlertCircle size={14} className="text-amber-500 shrink-0" aria-hidden="true" />
+      <p className="text-[12px] text-amber-400/90">
+        <span className="font-medium">Dr. {piName.split(" ").pop()}</span> hasn't responded in {daysSinceContact} days — consider following up.
+      </p>
+    </div>
+  );
+}
+
 // ── Empty state ───────────────────────────────────────────────────────────────
 
 function EmptyState() {
   return (
     <div className="flex flex-col items-center justify-center py-32 gap-5">
       <div className="size-12 flex items-center justify-center rounded-full bg-zinc-900 border border-zinc-800">
-        <BookMarked size={18} className="text-zinc-700" />
+        <BookMarked size={18} className="text-zinc-700" aria-hidden="true" />
       </div>
       <div className="text-center">
         <p className="text-[14px] text-zinc-400">No labs tracked yet.</p>
@@ -183,7 +227,15 @@ export function TrackerClient({ allLabs }: Props) {
   const validIds = new Set(allLabs.map((l) => l.id));
 
   useEffect(() => {
-    setEntries(readEntries(validIds));
+    const alreadySeeded = localStorage.getItem(DEMO_SEEDED_KEY) === "1";
+    const existing = readEntries(validIds);
+
+    if (!alreadySeeded && existing.length === 0) {
+      // First visit with no data — inject demo entries
+      setEntries(seedDemoData(validIds));
+    } else {
+      setEntries(existing);
+    }
     setMounted(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -244,11 +296,30 @@ export function TrackerClient({ allLabs }: Props) {
     ...STATUS_CONFIG[s],
   }));
 
-  // Sort: by lastUpdated desc
   const rows = [...entries].sort(
     (a, b) =>
       new Date(b.lastUpdated).getTime() - new Date(a.lastUpdated).getTime()
   );
+
+  // Find entries that need a follow-up (no_response + >14 days since contact)
+  const today = new Date("2026-04-13T10:00:00Z");
+  const followUpEntry = rows.find((e) => {
+    if (e.status !== "no_response") return false;
+    const dateSent = e.dateSent ?? e.lastUpdated;
+    const daysSince = Math.floor(
+      (today.getTime() - new Date(dateSent).getTime()) / 86400000
+    );
+    return daysSince >= 14;
+  });
+
+  const followUpLab = followUpEntry ? labMap.get(followUpEntry.labId) : null;
+  const followUpDays = followUpEntry
+    ? Math.floor(
+        (today.getTime() -
+          new Date(followUpEntry.dateSent ?? followUpEntry.lastUpdated).getTime()) /
+          86400000
+      )
+    : 0;
 
   return (
     <div className="flex flex-col min-h-full">
@@ -262,24 +333,29 @@ export function TrackerClient({ allLabs }: Props) {
         </h1>
 
         {mounted && summaryItems.length > 0 && (
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3 sm:gap-4 overflow-x-auto">
             {summaryItems.map((item, i) => (
-              <span key={item.status} className="flex items-center gap-1.5">
+              <span key={item.status} className="flex items-center gap-1.5 shrink-0">
                 {i > 0 && (
-                  <span className="text-zinc-800 mr-2 select-none">·</span>
+                  <span className="text-zinc-800 mr-1 select-none">·</span>
                 )}
-                <span
-                  className={cn("size-[6px] rounded-full", item.dot)}
-                />
+                <span className={cn("size-[6px] rounded-full", item.dot)} />
                 <span className="text-[12px] text-zinc-500 tabular-nums">
                   {item.count}
                 </span>
-                <span className="text-[12px] text-zinc-700">{item.label}</span>
+                <span className="text-[12px] text-zinc-700 hidden sm:inline">{item.label}</span>
               </span>
             ))}
           </div>
         )}
       </div>
+
+      {/* ── Follow-up banner ─────────────────────────────────────── */}
+      {mounted && followUpLab && (
+        <div className="pt-4">
+          <FollowUpBanner piName={followUpLab.piName} daysSinceContact={followUpDays} />
+        </div>
+      )}
 
       {/* ── Body ────────────────────────────────────────────────── */}
       <div className="flex-1 px-4 sm:px-8 py-6">
@@ -289,14 +365,13 @@ export function TrackerClient({ allLabs }: Props) {
           <div className="overflow-x-auto -mx-4 px-4 sm:-mx-8 sm:px-8">
           <table className="w-full table-fixed min-w-[640px]">
             <colgroup>
-              <col /> {/* Lab/PI — auto */}
+              <col />
               <col style={{ width: 180 }} />
               <col style={{ width: 120 }} />
               <col style={{ width: 80 }} />
               <col style={{ width: 200 }} />
             </colgroup>
 
-            {/* Header */}
             <thead>
               <tr className="border-b border-zinc-800/60">
                 {["Lab / PI", "Department", "Status", "Date", "Action"].map(
@@ -315,7 +390,6 @@ export function TrackerClient({ allLabs }: Props) {
               </tr>
             </thead>
 
-            {/* Rows */}
             <tbody>
               {rows.map((entry, i) => {
                 const lab = labMap.get(entry.labId);
@@ -333,10 +407,7 @@ export function TrackerClient({ allLabs }: Props) {
                   >
                     {/* Lab/PI */}
                     <td className="py-3 pr-4">
-                      <Link
-                        href={`/labs/${lab.id}`}
-                        className="block group/link"
-                      >
+                      <Link href={`/labs/${lab.id}`} className="block group/link">
                         <p
                           className="text-[13px] text-zinc-200 group-hover/link:text-blue-400 transition-colors duration-100 leading-snug truncate"
                           style={{ fontFamily: "var(--font-display)" }}
@@ -352,7 +423,9 @@ export function TrackerClient({ allLabs }: Props) {
                     {/* Department */}
                     <td className="py-3 pr-4">
                       <p className="text-[12px] text-zinc-600 truncate">
-                        {lab.department.replace("Department of ", "")}
+                        {lab.department
+                          .replace("Department of ", "")
+                          .replace("School of ", "")}
                       </p>
                     </td>
 
@@ -371,15 +444,14 @@ export function TrackerClient({ allLabs }: Props) {
                     {/* Action */}
                     <td className="py-3">
                       <div className="flex items-center gap-1">
-                        {/* Status dropdown */}
                         <DropdownMenu>
                           <DropdownMenuTrigger
                             aria-label={`Change status for ${lab.piName}`}
                             className={cn(
-                              "inline-flex items-center gap-1.5 h-7 px-2 rounded-[3px]",
+                              "inline-flex items-center gap-1.5 h-9 px-2 rounded-[3px]",
                               "text-[11px] text-zinc-500 hover:text-zinc-200",
                               "border border-transparent hover:border-zinc-700",
-                              "transition-all duration-100 cursor-pointer"
+                              "transition-[border-color,color] duration-100 cursor-pointer"
                             )}
                           >
                             <ChevronDown size={11} />
@@ -399,9 +471,7 @@ export function TrackerClient({ allLabs }: Props) {
                                   onClick={() => updateStatus(entry.labId, s)}
                                   className={cn(
                                     "flex items-center gap-2 text-[12px] cursor-pointer",
-                                    active
-                                      ? "text-zinc-200"
-                                      : "text-zinc-400"
+                                    active ? "text-zinc-200" : "text-zinc-400"
                                   )}
                                 >
                                   <span
@@ -412,17 +482,14 @@ export function TrackerClient({ allLabs }: Props) {
                                   />
                                   {cfg.label}
                                   {active && (
-                                    <Check
-                                      size={11}
-                                      className="ml-auto text-blue-400"
-                                    />
+                                    <Check size={11} className="ml-auto text-blue-400" />
                                   )}
                                 </DropdownMenuItem>
                               );
                             })}
                             <DropdownMenuSeparator className="bg-zinc-800" />
                             <DropdownMenuItem
-                              onClick={() => removeEntry(entry.labId)}
+                              onClick={() => handleDeleteClick(entry.labId)}
                               className="text-[12px] text-red-500/80 cursor-pointer hover:text-red-400"
                             >
                               Remove from tracker
@@ -430,13 +497,12 @@ export function TrackerClient({ allLabs }: Props) {
                           </DropdownMenuContent>
                         </DropdownMenu>
 
-                        {/* View profile */}
                         <Link
                           href={`/labs/${lab.id}`}
                           aria-label={`View ${lab.piName}'s lab profile`}
                           className={cn(
                             "inline-flex items-center justify-center",
-                            "size-7 rounded-[3px]",
+                            "size-9 rounded-[3px]",
                             "text-zinc-600 hover:text-zinc-300 hover:bg-zinc-800",
                             "transition-colors duration-100"
                           )}
@@ -444,23 +510,22 @@ export function TrackerClient({ allLabs }: Props) {
                           <ArrowUpRight size={13} />
                         </Link>
 
-                        {/* Delete with confirm */}
                         <button
                           onClick={() => handleDeleteClick(entry.labId)}
-                          aria-label={isConfirming ? "Confirm removal" : `Remove ${lab.piName} from tracker`}
+                          aria-label={
+                            isConfirming
+                              ? "Confirm removal"
+                              : `Remove ${lab.piName} from tracker`
+                          }
                           className={cn(
                             "inline-flex items-center justify-center gap-1",
-                            "h-7 rounded-[3px] transition-all duration-100",
+                            "h-9 rounded-[3px] transition-[background-color,color,border-color] duration-100",
                             isConfirming
                               ? "px-2 text-[11px] font-medium text-red-400 bg-red-500/10 border border-red-500/25 hover:bg-red-500/20"
-                              : "size-7 text-zinc-700 hover:text-zinc-400 hover:bg-zinc-800"
+                              : "size-9 text-zinc-700 hover:text-zinc-400 hover:bg-zinc-800"
                           )}
                         >
-                          {isConfirming ? (
-                            "Confirm?"
-                          ) : (
-                            <Trash2 size={12} />
-                          )}
+                          {isConfirming ? "Confirm?" : <Trash2 size={12} />}
                         </button>
                       </div>
                     </td>
@@ -473,7 +538,7 @@ export function TrackerClient({ allLabs }: Props) {
         )}
       </div>
 
-      {/* Footer — total count */}
+      {/* Footer */}
       {mounted && rows.length > 0 && (
         <div className="px-4 sm:px-8 py-3 border-t border-zinc-800/40">
           <span className="text-[11px] text-zinc-800">

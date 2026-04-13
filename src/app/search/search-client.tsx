@@ -11,7 +11,13 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
-import { filterAndRank, type ActivityFilter, type LabWithPubs } from "@/lib/search";
+import {
+  filterAndRank,
+  getMatchReasons,
+  type ActivityFilter,
+  type LabWithPubs,
+  type MatchReason,
+} from "@/lib/search";
 import type { Lab } from "@/lib/db/schema";
 import {
   Sheet,
@@ -23,6 +29,7 @@ import {
 // ── LocalStorage helpers ──────────────────────────────────────────────────────
 
 const SAVED_KEY = "labrecon:saved";
+const MAX_RENDERED_RESULTS = 50;
 
 function getSaved(): Set<number> {
   if (typeof window === "undefined") return new Set();
@@ -37,7 +44,7 @@ function writeSaved(ids: Set<number>) {
   localStorage.setItem(SAVED_KEY, JSON.stringify([...ids]));
 }
 
-// ── Dot indicator ─────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function activityDot(score: number) {
   if (score >= 75) return "bg-emerald-500";
@@ -51,6 +58,93 @@ function activityLabel(score: number) {
   return "Stale";
 }
 
+function formatMatchReasons(reasons: MatchReason[]): string {
+  if (!reasons.length) return "";
+  const parts = reasons.slice(0, 3).map((r) => {
+    switch (r.field) {
+      case "pi_name": return "PI name";
+      case "lab_name": return "lab name";
+      case "skills": return r.detail ? `skills (${r.detail})` : "skills";
+      case "department": return "department";
+      case "research_summary": return "research summary";
+      case "publications": return "publications";
+    }
+  });
+  return `Matched: ${parts.join(", ")}`;
+}
+
+// ── Autocomplete ──────────────────────────────────────────────────────────────
+
+type SuggestionItem = {
+  type: "pi" | "lab" | "skill" | "dept";
+  label: string;
+  query: string;
+};
+
+function buildSuggestions(
+  allLabs: LabWithPubs[],
+  query: string
+): SuggestionItem[] {
+  if (!query.trim() || query.length < 2) return [];
+  const q = query.toLowerCase();
+  const seen = new Set<string>();
+  const results: SuggestionItem[] = [];
+
+  for (const lab of allLabs) {
+    if (results.length >= 6) break;
+
+    // PI name match
+    if (lab.piName.toLowerCase().includes(q) && !seen.has(lab.piName)) {
+      seen.add(lab.piName);
+      results.push({ type: "pi", label: lab.piName, query: lab.piName });
+    }
+
+    // Lab name match
+    if (lab.labName.toLowerCase().includes(q) && !seen.has(lab.labName)) {
+      seen.add(lab.labName);
+      results.push({ type: "lab", label: lab.labName, query: lab.labName });
+    }
+
+    // Department match (short form)
+    const shortDept = lab.department
+      .replace("Department of ", "")
+      .replace("School of ", "");
+    if (
+      shortDept.toLowerCase().includes(q) &&
+      !seen.has(shortDept)
+    ) {
+      seen.add(shortDept);
+      results.push({ type: "dept", label: shortDept, query: lab.department });
+    }
+
+    // Skills
+    const skills = JSON.parse(lab.skills) as string[];
+    for (const skill of skills) {
+      if (results.length >= 6) break;
+      if (skill.toLowerCase().includes(q) && !seen.has(skill)) {
+        seen.add(skill);
+        results.push({ type: "skill", label: skill, query: skill });
+      }
+    }
+  }
+
+  return results.slice(0, 5);
+}
+
+function SuggestionTag({ type }: { type: SuggestionItem["type"] }) {
+  const labels: Record<SuggestionItem["type"], string> = {
+    pi: "PI",
+    lab: "Lab",
+    skill: "Skill",
+    dept: "Dept",
+  };
+  return (
+    <span className="text-[9px] uppercase tracking-wide text-zinc-700 w-8 shrink-0 text-right">
+      {labels[type]}
+    </span>
+  );
+}
+
 // ── Search result card ────────────────────────────────────────────────────────
 
 function ResultCard({
@@ -58,25 +152,32 @@ function ResultCard({
   saved,
   onSave,
   index,
+  query,
 }: {
   lab: LabWithPubs;
   saved: boolean;
   onSave: (id: number) => void;
   index: number;
+  query: string;
 }) {
   const skills = JSON.parse(lab.skills) as string[];
   const displaySkills = skills.slice(0, 5);
   const overflow = skills.length - 5;
+  const reasons = useMemo(
+    () => (query.trim() ? getMatchReasons(lab, query) : []),
+    [lab, query]
+  );
+  const matchText = formatMatchReasons(reasons);
 
   return (
     <div
       className="animate-fade-up relative group"
-      style={{ animationDelay: `${index * 35}ms` }}
+      style={{ animationDelay: `${index * 50}ms` }}
     >
-      {/* Overlay link — covers whole card but save button sits above it */}
+      {/* Overlay link */}
       <Link
         href={`/labs/${lab.id}`}
-        className="absolute inset-0 z-0 rounded-[4px]"
+        className="absolute inset-0 z-10 rounded-[4px]"
         aria-label={`View ${lab.piName}'s lab`}
       />
 
@@ -85,7 +186,7 @@ function ResultCard({
         className={cn(
           "relative flex flex-col gap-3 px-5 py-4",
           "bg-zinc-900 border border-zinc-800 rounded-[4px]",
-          "transition-all duration-100 ease-out",
+          "transition-[border-color,box-shadow,transform] duration-100 ease-out",
           "group-hover:border-blue-500/25",
           "group-hover:shadow-[0_4px_24px_rgba(59,130,246,0.05)]"
         )}
@@ -95,7 +196,7 @@ function ResultCard({
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <h3
-                className="text-[15px] leading-tight text-zinc-100"
+                className="text-[15px] leading-tight text-zinc-100 text-pretty"
                 style={{ fontFamily: "var(--font-display)" }}
               >
                 {lab.piName}
@@ -113,7 +214,7 @@ function ResultCard({
             </p>
           </div>
 
-          {/* Save button — z-10 so it's above the overlay link */}
+          {/* Save button — z-20 so it's above the overlay link */}
           <button
             onClick={(e) => {
               e.preventDefault();
@@ -122,8 +223,8 @@ function ResultCard({
             }}
             aria-label={saved ? "Remove from tracker" : "Save to tracker"}
             className={cn(
-              "relative z-10 flex items-center justify-center",
-              "size-7 rounded-[3px] shrink-0",
+              "relative z-20 flex items-center justify-center",
+              "size-9 rounded-[3px] shrink-0",
               "transition-colors duration-100",
               saved
                 ? "text-blue-400 hover:text-blue-300"
@@ -141,7 +242,7 @@ function ResultCard({
           </span>
           <span className="text-zinc-800 text-[11px]">·</span>
           <span className="text-[11px] text-zinc-700 truncate shrink-0">
-            {lab.department.replace("Department of ", "")}
+            {lab.department.replace("Department of ", "").replace("School of ", "")}
           </span>
         </div>
 
@@ -167,6 +268,13 @@ function ResultCard({
               </span>
             )}
           </div>
+        )}
+
+        {/* Row 5: Match reason */}
+        {matchText && (
+          <p className="text-[10px] text-zinc-700 leading-none">
+            {matchText}
+          </p>
         )}
       </div>
     </div>
@@ -205,7 +313,6 @@ function FilterPanel({
 
   return (
     <div className="animate-slide-in-left flex flex-col gap-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.14em] text-zinc-600">
           <SlidersHorizontal size={11} />
@@ -230,6 +337,7 @@ function FilterPanel({
         <select
           value={dept}
           onChange={(e) => onDept(e.target.value)}
+          aria-label="Filter by department"
           className={cn(
             "w-full h-8 px-2 text-[12px] rounded-[3px]",
             "bg-zinc-900 border border-zinc-800",
@@ -241,7 +349,7 @@ function FilterPanel({
           <option value="">All departments</option>
           {departments.map((d) => (
             <option key={d} value={d}>
-              {d.replace("Department of ", "")}
+              {d.replace("Department of ", "").replace("School of ", "")}
             </option>
           ))}
         </select>
@@ -281,20 +389,8 @@ function FilterPanel({
                   )}
                 >
                   {checked && (
-                    <svg
-                      width="8"
-                      height="6"
-                      viewBox="0 0 8 6"
-                      fill="none"
-                      className="text-white"
-                    >
-                      <path
-                        d="M1 3L3 5L7 1"
-                        stroke="currentColor"
-                        strokeWidth="1.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
+                    <svg width="8" height="6" viewBox="0 0 8 6" fill="none" className="text-white">
+                      <path d="M1 3L3 5L7 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
                   )}
                 </span>
@@ -347,7 +443,7 @@ function EmptyState({ query }: { query: string }) {
   return (
     <div className="flex flex-col items-center justify-center py-28 gap-5 text-center">
       <div className="size-12 flex items-center justify-center rounded-full bg-zinc-900 border border-zinc-800">
-        <Search size={18} className="text-zinc-700" />
+        <Search size={18} className="text-zinc-700" aria-hidden="true" />
       </div>
       <div>
         {query ? (
@@ -397,6 +493,17 @@ export function SearchClient({ allLabs, departments, allSkills, initialQuery }: 
   );
   const [savedIds, setSavedIds] = useState<Set<number>>(new Set());
 
+  // Autocomplete
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [selectedSuggestion, setSelectedSuggestion] = useState(-1);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const suggestionsRef = useRef<HTMLDivElement>(null);
+
+  const suggestions = useMemo(
+    () => buildSuggestions(allLabs, query),
+    [allLabs, query]
+  );
+
   // Load saved IDs from localStorage after mount
   useEffect(() => {
     setSavedIds(getSaved());
@@ -420,11 +527,10 @@ export function SearchClient({ allLabs, departments, allSkills, initialQuery }: 
     };
   }, [query, dept, skillFilters, activity, router]);
 
-  // Filter key — changing this re-mounts results and restarts stagger animation
   const filterKey = `${query}|${dept}|${skillFilters.join(",")}|${activity}`;
 
   const results = useMemo(
-    () => filterAndRank(allLabs, query, dept, skillFilters, activity),
+    () => filterAndRank(allLabs, query, dept, skillFilters, activity).slice(0, MAX_RENDERED_RESULTS),
     [allLabs, query, dept, skillFilters, activity]
   );
 
@@ -453,41 +559,108 @@ export function SearchClient({ allLabs, departments, allSkills, initialQuery }: 
   const hasFilters = dept || skillFilters.length > 0 || activity !== "all";
   const filterCount = (dept ? 1 : 0) + skillFilters.length + (activity !== "all" ? 1 : 0);
 
+  function applySuggestion(s: SuggestionItem) {
+    setQuery(s.query);
+    setShowSuggestions(false);
+    inputRef.current?.focus();
+  }
+
+  function onInputKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (!showSuggestions || !suggestions.length) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setSelectedSuggestion((s) => Math.min(s + 1, suggestions.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setSelectedSuggestion((s) => Math.max(s - 1, -1));
+    } else if (e.key === "Enter" && selectedSuggestion >= 0) {
+      e.preventDefault();
+      applySuggestion(suggestions[selectedSuggestion]);
+    } else if (e.key === "Enter") {
+      setShowSuggestions(false);
+      setSelectedSuggestion(-1);
+    } else if (e.key === "Escape") {
+      setShowSuggestions(false);
+    }
+  }
+
   return (
     <div className="flex flex-col min-h-full">
       {/* ── Sticky search bar ───────────────────────────────────────── */}
-      <div className="sticky top-0 z-20 flex items-center gap-3 px-5 h-[52px] bg-zinc-950 border-b border-zinc-800/60">
+      <div className="sticky top-0 z-20 flex items-center gap-3 px-5 h-[52px] bg-zinc-950 border-b border-zinc-800/60 focus-within:border-zinc-600 transition-colors duration-100">
         <Search size={14} className="text-zinc-600 shrink-0" aria-hidden="true" />
         <label htmlFor="lab-search" className="sr-only">Search labs</label>
-        <input
-          id="lab-search"
-          type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search labs, PIs, research areas, techniques…"
-          autoFocus
-          className={cn(
-            "flex-1 h-full bg-transparent",
-            "text-sm text-zinc-100 placeholder:text-zinc-700",
-            "outline-none border-none"
+
+        <div className="relative flex-1 h-full flex items-center">
+          <input
+            ref={inputRef}
+            id="lab-search"
+            type="text"
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setShowSuggestions(true);
+              setSelectedSuggestion(-1);
+            }}
+            onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+            onKeyDown={onInputKeyDown}
+            placeholder="Search labs, PIs, research areas, techniques…"
+            autoFocus
+            className={cn(
+              "w-full h-full bg-transparent",
+              "text-sm text-zinc-100 placeholder:text-zinc-700",
+              "outline-none border-none"
+            )}
+          />
+
+          {/* Autocomplete dropdown */}
+          {showSuggestions && suggestions.length > 0 && (
+            <div
+              ref={suggestionsRef}
+              className="absolute top-full left-0 right-0 mt-1 bg-zinc-900 border border-zinc-800 rounded-[4px] shadow-xl z-30 overflow-hidden"
+              onMouseDown={(e) => e.preventDefault()}
+            >
+              {suggestions.map((s, i) => (
+                <button
+                  key={`${s.type}-${s.label}`}
+                  onClick={() => applySuggestion(s)}
+                  className={cn(
+                    "w-full flex items-center justify-between gap-3 px-3 py-2.5 text-left",
+                    "text-[12px] transition-colors duration-75",
+                    i === selectedSuggestion
+                      ? "bg-zinc-800 text-zinc-100"
+                      : "text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200"
+                  )}
+                >
+                  <span className="truncate">{s.label}</span>
+                  <SuggestionTag type={s.type} />
+                </button>
+              ))}
+            </div>
           )}
-        />
+        </div>
+
         {query && (
           <button
-            onClick={() => setQuery("")}
-            className="text-zinc-700 hover:text-zinc-400 transition-colors"
+            onClick={() => {
+              setQuery("");
+              setShowSuggestions(false);
+              setSelectedSuggestion(-1);
+            }}
+            className="text-zinc-700 hover:text-zinc-400 transition-colors shrink-0"
+            aria-label="Clear search"
           >
             <X size={13} />
           </button>
         )}
       </div>
 
-      {/* ── Mobile filter bar (hidden on desktop) ───────────────────── */}
+      {/* ── Mobile filter bar ───────────────────────────────────────── */}
       <div className="md:hidden flex items-center gap-3 px-5 py-2.5 border-b border-zinc-800/50">
         <Sheet>
           <SheetTrigger
             className={cn(
-              "inline-flex items-center gap-1.5 h-7 px-3 rounded-[3px] text-[12px]",
+              "inline-flex items-center gap-1.5 h-10 px-3 rounded-[3px] text-[12px]",
               "border transition-colors duration-100 cursor-pointer",
               hasFilters
                 ? "border-blue-500/30 text-blue-400 bg-blue-500/5"
@@ -561,23 +734,23 @@ export function SearchClient({ allLabs, departments, allSkills, initialQuery }: 
 
         {/* Results */}
         <div className="flex-1 px-4 md:px-6 py-5 min-w-0">
-          {/* Count / status line — desktop only (mobile shows in filter bar) */}
+          {/* Count / status line — desktop only */}
           <div className="hidden md:flex items-center gap-2 mb-4 h-6">
             {query || hasFilters ? (
-              <span className="text-[11px] text-zinc-600">
+              <span className="text-[11px] text-zinc-600 animate-page-fade-in">
                 {results.length === 0
                   ? "No results"
-                  : `${results.length} result${results.length !== 1 ? "s" : ""}`}
+                  : `${results.length.toLocaleString()} researcher${results.length !== 1 ? "s" : ""}`}
                 {query && (
                   <>
-                    {" "}for{" "}
+                    {" "}match{results.length !== 1 ? "" : "es"}{" "}
                     <span className="text-zinc-400">"{query}"</span>
                   </>
                 )}
               </span>
             ) : (
               <span className="text-[11px] text-zinc-700">
-                {allLabs.length} labs · sorted by activity
+                {allLabs.length.toLocaleString()} researchers · sorted by activity
               </span>
             )}
           </div>
@@ -594,6 +767,7 @@ export function SearchClient({ allLabs, departments, allSkills, initialQuery }: 
                   saved={savedIds.has(lab.id)}
                   onSave={handleSave}
                   index={i}
+                  query={query}
                 />
               ))}
             </div>

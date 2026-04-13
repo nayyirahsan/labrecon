@@ -1,5 +1,5 @@
 import { and, desc, eq, ne } from "drizzle-orm";
-import { ExternalLink, ChevronLeft } from "lucide-react";
+import { ExternalLink, ChevronLeft, GraduationCap } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
@@ -8,6 +8,7 @@ import type { Lab } from "@/lib/db/schema";
 import { cn } from "@/lib/utils";
 import { EmailSheet } from "@/components/email-sheet";
 import { SaveButton } from "./save-button";
+import { PubSparkline } from "@/components/pub-sparkline";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -48,7 +49,18 @@ function displayHost(url: string): string {
   }
 }
 
-// ── Sub-components (server) ───────────────────────────────────────────────────
+function funderUrl(funder: string): string | null {
+  const f = funder.toLowerCase();
+  if (f.startsWith("nsf")) return "https://www.nsf.gov/awardsearch/";
+  if (f.startsWith("nih")) return "https://reporter.nih.gov/";
+  if (f.startsWith("darpa")) return "https://www.darpa.mil/work-with-us/for-universities";
+  if (f.startsWith("doe")) return "https://www.energy.gov/science";
+  if (f.includes("simons")) return "https://www.simonsfoundation.org/grant/";
+  if (f.includes("cdc")) return "https://grants.nih.gov/funding/searchguide/index.html";
+  return null;
+}
+
+// ── Sub-components ────────────────────────────────────────────────────────────
 
 function SectionHeader({ label }: { label: string }) {
   return (
@@ -94,7 +106,7 @@ function SimilarLabCard({ lab }: { lab: Lab }) {
       className={cn(
         "flex flex-col gap-2 p-4",
         "bg-zinc-900 border border-zinc-800 rounded-[4px]",
-        "transition-all duration-100 ease-out",
+        "transition-[border-color,box-shadow,transform] duration-100 ease-out",
         "hover:-translate-y-px hover:border-blue-500/20",
         "hover:shadow-[0_4px_16px_rgba(59,130,246,0.04)]"
       )}
@@ -119,13 +131,18 @@ function SimilarLabCard({ lab }: { lab: Lab }) {
         {lab.labName}
       </p>
 
-      <p className="text-[11px] text-zinc-600 leading-[1.55] line-clamp-2">
-        {lab.researchSummary}
-      </p>
-
-      <p className="text-[10px] text-zinc-700 truncate mt-auto pt-1">
-        {lab.department.replace("Department of ", "")}
-      </p>
+      {skills.length > 0 && (
+        <div className="flex flex-wrap gap-1 mt-auto">
+          {skills.slice(0, 3).map((s) => (
+            <span
+              key={s}
+              className="inline-block px-1.5 py-[3px] text-[9px] text-zinc-500 bg-zinc-800/60 rounded-[2px] leading-none"
+            >
+              {s}
+            </span>
+          ))}
+        </div>
+      )}
     </Link>
   );
 }
@@ -167,17 +184,17 @@ export default async function LabPage({ params }: { params: Params }) {
     .where(eq(grants.labId, labId))
     .all();
 
-  // Similar labs: same department first, fill from others sorted by activity
+  // Similar labs: same department first, fill with cross-department
   const sameDept = db
     .select()
     .from(labs)
     .where(and(eq(labs.department, lab.department), ne(labs.id, labId)))
     .orderBy(desc(labs.activityScore))
-    .limit(3)
+    .limit(4)
     .all();
 
   const similarLabs =
-    sameDept.length >= 3
+    sameDept.length >= 4
       ? sameDept
       : [
           ...sameDept,
@@ -186,11 +203,14 @@ export default async function LabPage({ params }: { params: Params }) {
             .from(labs)
             .where(and(ne(labs.department, lab.department), ne(labs.id, labId)))
             .orderBy(desc(labs.activityScore))
-            .limit(3 - sameDept.length)
+            .limit(4 - sameDept.length)
             .all(),
         ];
 
   const skills = JSON.parse(lab.skills) as string[];
+  const hasPubs = pubs.length > 0;
+  const pubYears = pubs.map((p) => p.year);
+  const isUndergradFriendly = lab.activityScore >= 80;
 
   return (
     <div className="max-w-3xl mx-auto px-4 sm:px-8 py-10 pb-20">
@@ -210,7 +230,7 @@ export default async function LabPage({ params }: { params: Params }) {
       >
         <div className="flex-1 min-w-0">
           <h1
-            className="text-[36px] leading-[1.06] text-zinc-50 mb-2"
+            className="text-[36px] leading-[1.06] text-zinc-50 mb-2 text-pretty"
             style={{ fontFamily: "var(--font-display)" }}
           >
             {lab.piName}
@@ -254,6 +274,14 @@ export default async function LabPage({ params }: { params: Params }) {
             <span className="opacity-50">·</span>
             <span className="tabular-nums">{lab.activityScore}</span>
           </span>
+
+          {isUndergradFriendly && (
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] border border-blue-500/20 text-blue-400 bg-blue-500/5">
+              <GraduationCap size={11} />
+              Undergrad Friendly
+            </span>
+          )}
+
           <p className="text-[11px] text-zinc-600">
             {lab.labName}
           </p>
@@ -269,11 +297,19 @@ export default async function LabPage({ params }: { params: Params }) {
         </p>
       </Section>
 
-      {pubs.length > 0 && (
+      {hasPubs && (
         <>
           <Rule />
           {/* ── Publications ─────────────────────────────────────── */}
           <Section label="Recent Publications" delay={160}>
+            {/* Sparkline */}
+            <div className="flex items-center gap-3 mb-5">
+              <PubSparkline years={pubYears} />
+              <span className="text-[10px] text-zinc-700">
+                {pubs.length} paper{pubs.length !== 1 ? "s" : ""} · {Math.min(...pubYears)}–{Math.max(...pubYears)}
+              </span>
+            </div>
+
             <div>
               {pubs.map((pub, i) => (
                 <div
@@ -302,15 +338,27 @@ export default async function LabPage({ params }: { params: Params }) {
                       {pub.year}
                     </span>
                   </div>
-                  <p className="text-[11px] text-zinc-600">
-                    {pub.venue}
-                    {pub.authors && (
-                      <>
-                        <span className="text-zinc-800 mx-1.5">·</span>
-                        {pub.authors}
-                      </>
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <p className="text-[11px] text-zinc-600">
+                      {pub.venue}
+                      {pub.authors && (
+                        <>
+                          <span className="text-zinc-800 mx-1.5">·</span>
+                          {pub.authors}
+                        </>
+                      )}
+                    </p>
+                    {pub.citations != null && pub.citations > 0 && (
+                      <span className="text-[10px] text-zinc-700 tabular-nums">
+                        {pub.citations.toLocaleString()} citations
+                      </span>
                     )}
-                  </p>
+                  </div>
+                  {pub.abstract && (
+                    <p className="text-[11px] text-zinc-600 leading-[1.6] line-clamp-2 mt-0.5">
+                      {pub.abstract}
+                    </p>
+                  )}
                 </div>
               ))}
             </div>
@@ -334,9 +382,20 @@ export default async function LabPage({ params }: { params: Params }) {
                 >
                   <div className="flex items-start justify-between gap-6">
                     <div className="flex items-baseline gap-2 min-w-0">
-                      <span className="text-[12px] text-zinc-300 font-medium shrink-0">
-                        {grant.funder}
-                      </span>
+                      {funderUrl(grant.funder) ? (
+                        <a
+                          href={funderUrl(grant.funder)!}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[12px] text-zinc-300 font-medium shrink-0 hover:text-blue-400 transition-colors duration-100"
+                        >
+                          {grant.funder}
+                        </a>
+                      ) : (
+                        <span className="text-[12px] text-zinc-300 font-medium shrink-0">
+                          {grant.funder}
+                        </span>
+                      )}
                       {grant.amount && (
                         <>
                           <span className="text-zinc-800">·</span>
@@ -394,9 +453,16 @@ export default async function LabPage({ params }: { params: Params }) {
           piName={lab.piName}
           piEmail={lab.email}
           labName={lab.labName}
+          hasPubs={hasPubs}
         />
         <SaveButton labId={lab.id} />
       </div>
+
+      {!hasPubs && (
+        <p className="mt-2 text-[11px] text-zinc-700">
+          More data needed to generate personalized outreach for this lab.
+        </p>
+      )}
 
       {/* ── Similar Labs ─────────────────────────────────────────── */}
       {similarLabs.length > 0 && (
@@ -407,7 +473,7 @@ export default async function LabPage({ params }: { params: Params }) {
             style={{ animationDelay: "360ms" }}
           >
             <SectionHeader label="Similar Labs" />
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {similarLabs.map((sl) => (
                 <SimilarLabCard key={sl.id} lab={sl} />
               ))}

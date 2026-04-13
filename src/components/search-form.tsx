@@ -21,12 +21,16 @@ export function SearchForm() {
       <Search
         size={15}
         className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600 pointer-events-none"
+        aria-hidden="true"
       />
       <input
         type="text"
+        name="q"
+        autoComplete="off"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         placeholder="Search labs, PIs, research areas, techniques…"
+        aria-label="Search labs"
         className={cn(
           "w-full h-[52px] pl-11 pr-4",
           "bg-zinc-900 border border-zinc-800",

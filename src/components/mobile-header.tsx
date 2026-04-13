@@ -28,7 +28,7 @@ export function MobileHeader() {
         onClick={() => setOpen(false)}
         className="flex items-center gap-2"
       >
-        <FlaskConical size={15} className="text-zinc-500" />
+        <FlaskConical size={15} className="text-zinc-500" aria-hidden="true" />
         <span
           className="text-[15px] text-zinc-100 tracking-tight leading-none"
           style={{ fontFamily: "var(--font-display)" }}
@@ -57,15 +57,19 @@ export function MobileHeader() {
           className="!w-[220px] flex flex-col p-0 bg-zinc-950 border-r border-zinc-800/60"
         >
           {/* Sheet wordmark */}
-          <div className="flex items-center h-[52px] px-3 border-b border-zinc-800/60 shrink-0 gap-2.5">
-            <FlaskConical size={15} className="text-zinc-500 shrink-0" />
+          <Link
+            href="/"
+            onClick={() => setOpen(false)}
+            className="flex items-center h-[52px] px-3 border-b border-zinc-800/60 shrink-0 gap-2.5"
+          >
+            <FlaskConical size={15} className="text-zinc-500 shrink-0" aria-hidden="true" />
             <span
               className="text-[15px] text-zinc-100 tracking-tight leading-none"
               style={{ fontFamily: "var(--font-display)" }}
             >
               LabRecon
             </span>
-          </div>
+          </Link>
 
           {/* Nav — each link closes the Sheet */}
           <nav aria-label="Main navigation" className="flex-1 py-1.5 px-1.5 flex flex-col gap-0.5">
@@ -84,7 +88,7 @@ export function MobileHeader() {
                       : "text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800/50"
                   )}
                 >
-                  <Icon size={14} className="shrink-0" />
+                  <Icon size={14} className="shrink-0" aria-hidden="true" />
                   <span>{label}</span>
                 </Link>
               );

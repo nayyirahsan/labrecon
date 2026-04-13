@@ -31,6 +31,7 @@ export const publications = sqliteTable("publications", {
   venue: text("venue").notNull(),
   url: text("url"),
   abstract: text("abstract"),
+  citations: integer("citations"),
 });
 
 export const grants = sqliteTable("grants", {

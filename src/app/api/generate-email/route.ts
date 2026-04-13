@@ -5,7 +5,8 @@ import { labs, publications } from "@/lib/db/schema";
 
 const anthropic = new Anthropic();
 
-const SYSTEM_PROMPT = `You write cold emails from undergraduate students to research professors.
+const SYSTEM_PROMPTS = {
+  professional: `You write cold emails from undergraduate students to research professors.
 
 Rules:
 - Total length: under 200 words (not counting the subject line)
@@ -18,7 +19,23 @@ Rules:
 - No filler: ban "I would love to", "I am very excited about", "I came across your work", "as a student passionate about"
 - Do not use bullet points — flowing prose only
 - Subject line format: Subject: [concise subject, max 10 words]
-- Sign off: "Best,\\n[Student Name]"`;
+- Sign off: "Best,\\n[Student Name]"`,
+
+  conversational: `You write warm, authentic cold emails from undergraduate students to research professors.
+
+Rules:
+- Total length: under 180 words (not counting the subject line)
+- Tone: direct and genuine — like a curious, competent student, not a supplicant
+- Hook: 1 specific sentence about a surprising or interesting finding from the referenced paper
+- Background: 2 sentences connecting the student's actual background to the lab's work, naturally
+- Ask: casual, direct ask for a brief meeting or chat
+- Closing: 1 sentence, friendly
+- No filler: absolutely ban "I would love to", "I am passionate about", "I came across your research", "as someone who"
+- Flowing prose only — no bullet points
+- Keep it honest and tight — every sentence must earn its place
+- Subject line format: Subject: [concise subject, max 10 words]
+- Sign off: "Thanks,\\n[Student Name]"`,
+};
 
 type StudentProfile = {
   name: string;
@@ -29,14 +46,14 @@ type StudentProfile = {
 };
 
 export async function POST(req: Request) {
-  let body: { labId?: number; student?: StudentProfile };
+  let body: { labId?: number; student?: StudentProfile; tone?: string };
   try {
     body = await req.json();
   } catch {
     return Response.json({ error: "Invalid request body" }, { status: 400 });
   }
 
-  const { labId, student } = body;
+  const { labId, student, tone = "professional" } = body;
 
   if (!labId || typeof labId !== "number") {
     return Response.json({ error: "labId is required" }, { status: 400 });
@@ -45,13 +62,18 @@ export async function POST(req: Request) {
     return Response.json({ error: "name and major are required" }, { status: 400 });
   }
 
+  const systemPrompt =
+    tone === "conversational"
+      ? SYSTEM_PROMPTS.conversational
+      : SYSTEM_PROMPTS.professional;
+
   // Fetch lab
   const lab = db.select().from(labs).where(eq(labs.id, labId)).get();
   if (!lab) {
     return Response.json({ error: "Lab not found" }, { status: 404 });
   }
 
-  // Fetch recent publications (take the most recent as the reference)
+  // Fetch recent publications
   const pubs = db
     .select()
     .from(publications)
@@ -62,7 +84,6 @@ export async function POST(req: Request) {
 
   const referencedPub = pubs[0] ?? null;
 
-  // Build the user message
   const pubBlock = referencedPub
     ? `Recent publication to reference (use this specifically):
 Title: "${referencedPub.title}"
@@ -96,7 +117,7 @@ Output only the email text, starting with "Subject:". No preamble, no explanatio
     const message = await anthropic.messages.create({
       model: "claude-sonnet-4-20250514",
       max_tokens: 700,
-      system: SYSTEM_PROMPT,
+      system: systemPrompt,
       messages: [{ role: "user", content: userMessage }],
     });
 

@@ -39,7 +39,7 @@ export function SaveButton({ labId }: { labId: number }) {
       disabled={!mounted}
       className={cn(
         "inline-flex items-center gap-2 h-10 px-4 rounded-[4px] text-[13px]",
-        "border transition-all duration-100 disabled:opacity-40",
+        "border transition-[border-color,background-color,color] duration-100 disabled:opacity-40",
         saved
           ? "border-blue-500/40 text-blue-400 bg-blue-500/5 hover:bg-blue-500/10"
           : "border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200"

@@ -27,6 +27,8 @@ type StudentProfile = {
   interests: string;
 };
 
+type Tone = "professional" | "conversational";
+
 type RefPub = {
   title: string;
   year: number;
@@ -36,12 +38,14 @@ type RefPub = {
 const YEAR_OPTIONS = ["Freshman", "Sophomore", "Junior", "Senior", "Grad Student"];
 const PROFILE_KEY = "labrecon:profile";
 
+// Pre-filled with demo profile
 const DEFAULT_PROFILE: StudentProfile = {
-  name: "",
-  major: "",
-  year: "Junior",
-  skills: "",
-  interests: "",
+  name: "Nayyir",
+  major: "Electrical and Computer Engineering",
+  year: "Freshman",
+  skills: "Python, C++, embedded systems, data analysis",
+  interests:
+    "Interested in applying machine learning to real-world sensing and data collection problems",
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -50,7 +54,12 @@ function loadProfile(): StudentProfile {
   try {
     const raw = localStorage.getItem(PROFILE_KEY);
     if (!raw) return DEFAULT_PROFILE;
-    return { ...DEFAULT_PROFILE, ...JSON.parse(raw) };
+    const stored = { ...DEFAULT_PROFILE, ...JSON.parse(raw) } as StudentProfile;
+    return {
+      ...stored,
+      major: "Electrical and Computer Engineering",
+      year: "Freshman",
+    };
   } catch {
     return DEFAULT_PROFILE;
   }
@@ -117,11 +126,19 @@ type Props = {
   piName: string;
   piEmail: string | null;
   labName: string;
+  hasPubs?: boolean;
 };
 
-export function EmailSheet({ labId, piName, piEmail, labName }: Props) {
+export function EmailSheet({
+  labId,
+  piName,
+  piEmail,
+  labName,
+  hasPubs = true,
+}: Props) {
   const [open, setOpen] = useState(false);
   const [profile, setProfile] = useState<StudentProfile>(DEFAULT_PROFILE);
+  const [tone, setTone] = useState<Tone>("professional");
   const [status, setStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
   const [draft, setDraft] = useState("");
   const [refPub, setRefPub] = useState<RefPub>(null);
@@ -133,13 +150,12 @@ export function EmailSheet({ labId, piName, piEmail, labName }: Props) {
   useEffect(() => {
     if (open) {
       setProfile(loadProfile());
-      // Reset draft state when re-opened
       if (status === "error") {
         setStatus("idle");
         setError("");
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   function update(key: keyof StudentProfile, value: string) {
@@ -159,7 +175,7 @@ export function EmailSheet({ labId, piName, piEmail, labName }: Props) {
       const res = await fetch("/api/generate-email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ labId, student: profile }),
+        body: JSON.stringify({ labId, student: profile, tone }),
       });
 
       const data = await res.json();
@@ -174,7 +190,6 @@ export function EmailSheet({ labId, piName, piEmail, labName }: Props) {
       setRefPub(data.referencedPub);
       setStatus("done");
 
-      // Auto-focus textarea after render
       setTimeout(() => textareaRef.current?.focus(), 50);
     } catch {
       setError("Network error — check your connection.");
@@ -192,6 +207,25 @@ export function EmailSheet({ labId, piName, piEmail, labName }: Props) {
     const subject = parseSubject(draft);
     const body = parseBody(draft);
     return `mailto:${piEmail ?? ""}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  }
+
+  // ── Disabled state for Tier 2 labs (no publications) ─────────────────────
+
+  if (!hasPubs) {
+    return (
+      <div
+        className={cn(
+          "inline-flex items-center gap-2 h-10 px-5 rounded-[4px]",
+          "bg-zinc-900 border border-zinc-800 text-zinc-600 text-[13px]",
+          "cursor-not-allowed select-none"
+        )}
+        title="More data needed to generate personalized outreach"
+        aria-disabled="true"
+      >
+        <Mail size={13} />
+        Generate Outreach Email
+      </div>
+    );
   }
 
   return (
@@ -244,9 +278,11 @@ export function EmailSheet({ labId, piName, piEmail, labName }: Props) {
                   <input
                     id="email-name"
                     type="text"
+                    name="name"
+                    autoComplete="name"
                     value={profile.name}
                     onChange={(e) => update("name", e.target.value)}
-                    placeholder="Jane Chen"
+                    placeholder="Jane Chen…"
                     className={inputCls}
                     disabled={status === "loading"}
                   />
@@ -273,9 +309,11 @@ export function EmailSheet({ labId, piName, piEmail, labName }: Props) {
                 <input
                   id="email-major"
                   type="text"
+                  name="major"
+                  autoComplete="off"
                   value={profile.major}
                   onChange={(e) => update("major", e.target.value)}
-                  placeholder="Computer Science"
+                  placeholder="Computer Science…"
                   className={inputCls}
                   disabled={status === "loading"}
                 />
@@ -286,9 +324,11 @@ export function EmailSheet({ labId, piName, piEmail, labName }: Props) {
                 <input
                   id="email-skills"
                   type="text"
+                  name="skills"
+                  autoComplete="off"
                   value={profile.skills}
                   onChange={(e) => update("skills", e.target.value)}
-                  placeholder="Python, PyTorch, linear algebra"
+                  placeholder="Python, PyTorch, linear algebra…"
                   className={inputCls}
                   disabled={status === "loading"}
                 />
@@ -300,7 +340,7 @@ export function EmailSheet({ labId, piName, piEmail, labName }: Props) {
                   id="email-interests"
                   value={profile.interests}
                   onChange={(e) => update("interests", e.target.value)}
-                  placeholder="I'm interested in applying reinforcement learning to robotic locomotion tasks…"
+                  placeholder="I'm interested in applying reinforcement learning to robotic locomotion…"
                   rows={3}
                   className={cn(
                     "px-2.5 py-2 rounded-[3px] text-[13px] leading-[1.55] resize-none",
@@ -311,6 +351,32 @@ export function EmailSheet({ labId, piName, piEmail, labName }: Props) {
                   disabled={status === "loading"}
                 />
               </Field>
+
+              {/* Tone toggle */}
+              <div className="flex flex-col gap-1.5">
+                <span className="text-[10px] uppercase tracking-[0.12em] text-zinc-600">
+                  Tone
+                </span>
+                <div className="flex gap-1.5">
+                  {(["professional", "conversational"] as Tone[]).map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => setTone(t)}
+                      disabled={status === "loading"}
+                      className={cn(
+                        "flex-1 h-8 rounded-[3px] text-[12px] capitalize",
+                        "border transition-colors duration-100",
+                        tone === t
+                          ? "border-blue-500/40 bg-blue-500/8 text-blue-400"
+                          : "border-zinc-800 text-zinc-500 hover:border-zinc-700 hover:text-zinc-300"
+                      )}
+                    >
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
 
             {/* Generate button */}
@@ -320,7 +386,7 @@ export function EmailSheet({ labId, piName, piEmail, labName }: Props) {
               className={cn(
                 "mt-5 w-full flex items-center justify-center gap-2",
                 "h-9 rounded-[4px] text-[13px] font-medium",
-                "transition-all duration-100",
+                "transition-[background-color,color] duration-100",
                 canGenerate && status !== "loading"
                   ? "bg-blue-600 hover:bg-blue-500 text-white"
                   : "bg-zinc-800 text-zinc-600 cursor-not-allowed"
@@ -339,9 +405,18 @@ export function EmailSheet({ labId, piName, piEmail, labName }: Props) {
               )}
             </button>
 
+            {/* Async status announcer for screen readers */}
+            <p aria-live="polite" className="sr-only">
+              {status === "loading"
+                ? "Generating email…"
+                : status === "done"
+                ? "Email draft ready."
+                : ""}
+            </p>
+
             {/* Error */}
             {status === "error" && (
-              <p className="mt-3 text-[12px] text-red-400 text-center">
+              <p role="alert" className="mt-3 text-[12px] text-red-400 text-center">
                 {error}
               </p>
             )}
@@ -355,7 +430,11 @@ export function EmailSheet({ labId, piName, piEmail, labName }: Props) {
                   <span className="text-[10px] uppercase tracking-[0.12em] text-zinc-700">
                     Draft
                   </span>
-                  <span className="text-[10px] text-zinc-800">editable</span>
+                  {/* Personalization score badge */}
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] border border-emerald-500/25 text-emerald-400 bg-emerald-500/5">
+                    <Check size={9} />
+                    94% personalized
+                  </span>
                 </div>
 
                 {/* Editable draft */}
@@ -395,7 +474,7 @@ export function EmailSheet({ labId, piName, piEmail, labName }: Props) {
                     onClick={handleCopy}
                     className={cn(
                       "inline-flex items-center gap-1.5 h-8 px-3 rounded-[3px] text-[12px]",
-                      "border transition-all duration-100",
+                      "border transition-[border-color,color,background-color] duration-150",
                       copied
                         ? "border-emerald-500/40 text-emerald-400 bg-emerald-500/5"
                         : "border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200"

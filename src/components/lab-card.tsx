@@ -29,7 +29,7 @@ export function LabCard({ lab }: Props) {
       className={cn(
         "group relative flex flex-col gap-3.5 p-5",
         "bg-zinc-900 border border-zinc-800 rounded-[4px]",
-        "transition-all duration-100 ease-out",
+        "transition-[border-color,box-shadow,transform] duration-100 ease-out",
         "hover:-translate-y-px",
         "hover:border-blue-500/25",
         "hover:shadow-[0_8px_32px_rgba(59,130,246,0.05)]"
@@ -39,7 +39,7 @@ export function LabCard({ lab }: Props) {
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
           <h3
-            className="text-[15px] leading-snug text-zinc-100"
+            className="text-[15px] leading-snug text-zinc-100 text-pretty"
             style={{ fontFamily: "var(--font-display)" }}
           >
             {lab.piName}
