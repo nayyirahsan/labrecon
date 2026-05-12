@@ -21,7 +21,8 @@ export default async function HomePage() {
   let labCount = 0;
   let actualPubCount = 0;
   let actualGrantCount = 0;
-  let activeLabs: (typeof researchers.$inferSelect)[] = [];
+  type LabRow = Omit<typeof researchers.$inferSelect, 'embedding'>;
+  let activeLabs: LabRow[] = [];
 
   try {
     [labCount, actualPubCount, actualGrantCount, activeLabs] = await Promise.all([
@@ -29,12 +30,22 @@ export default async function HomePage() {
       db.select({ v: count() }).from(publications).then(r => r[0]?.v ?? 0),
       db.select({ v: count() }).from(grants).then(r => r[0]?.v ?? 0),
       db
-        .select({ researcher: researchers })
+        .select({
+          id: researchers.id,
+          name: researchers.name,
+          title: researchers.title,
+          department: researchers.department,
+          email: researchers.email,
+          profile_url: researchers.profile_url,
+          research_summary: researchers.research_summary,
+          openalex_id: researchers.openalex_id,
+          last_updated_at: researchers.last_updated_at,
+          created_at: researchers.created_at,
+        })
         .from(researchers)
         .where(isNotNull(researchers.profile_url))
         .orderBy(desc(researchers.last_updated_at))
-        .limit(8)
-        .then(rows => rows.map(r => r.researcher)),
+        .limit(8),
     ]);
   } catch (e) {
     console.error('DB query failed:', e);
