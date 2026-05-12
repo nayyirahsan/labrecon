@@ -8,7 +8,11 @@ let _db: DrizzleDb | undefined;
 
 function getDb(): DrizzleDb {
   if (!_db) {
-    const client = postgres(process.env.DATABASE_URL!);
+    const client = postgres(process.env.DATABASE_URL!, {
+      max: 1,
+      idle_timeout: 20,
+      connect_timeout: 10,
+    });
     _db = drizzle(client, { schema });
   }
   return _db;
