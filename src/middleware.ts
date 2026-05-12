@@ -25,7 +25,17 @@ export async function middleware(request: NextRequest) {
     }
   );
 
-  await supabase.auth.getUser();
+  try {
+    await Promise.race([
+      supabase.auth.getUser(),
+      new Promise<void>((_, reject) =>
+        setTimeout(() => reject(new Error("auth timeout")), 5000)
+      ),
+    ]);
+  } catch {
+    // Auth check failed or timed out — pass through without a session.
+    // This prevents Supabase cold-starts from hanging every request.
+  }
 
   return supabaseResponse;
 }
