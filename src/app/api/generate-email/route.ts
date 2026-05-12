@@ -1,11 +1,11 @@
-import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { and, count, desc, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { email_generations, publications, researchers, user_profiles } from "@/lib/db/schema";
 import { createServerClient } from "@/lib/supabase/server";
 import { increment } from "@/lib/metrics";
 
-const anthropic = new Anthropic();
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
 const DAILY_LIMIT = 5;
 
@@ -186,15 +186,9 @@ CRITICAL REQUIREMENTS:
 6. Output only the email text, starting with "Subject:"`;
 
   try {
-    const message = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 700,
-      system: systemPrompt,
-      messages: [{ role: "user", content: userMessage }],
-    });
-
-    const email =
-      message.content[0].type === "text" ? message.content[0].text.trim() : "";
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const result = await model.generateContent(`${systemPrompt}\n\n${userMessage}`);
+    const email = result.response.text().trim();
 
     // Record generation
     await db.insert(email_generations).values({
@@ -215,7 +209,7 @@ CRITICAL REQUIREMENTS:
   } catch (err) {
     console.error("[generate-email]", err);
     return Response.json(
-      { error: "Failed to generate email. Check your ANTHROPIC_API_KEY." },
+      { error: "Failed to generate email. Check your GEMINI_API_KEY." },
       { status: 500 }
     );
   }

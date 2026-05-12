@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   Bookmark,
   BookmarkCheck,
+  ChevronDown,
+  Loader2,
   Search,
   SlidersHorizontal,
   X,
@@ -25,7 +27,7 @@ import type { Publication, Researcher } from "@/lib/db/schema";
 type ResearcherResult = Researcher & {
   semantic_score?: number;
   combined_score?: number;
-  pubs: Pick<Publication, "id" | "title" | "year" | "cited_by_count" | "venue">[];
+  pubs: Pick<Publication, "id" | "title" | "year" | "cited_by_count" | "venue" | "abstract">[];
 };
 
 type SearchMeta = {
@@ -33,7 +35,10 @@ type SearchMeta = {
   duration_ms: number;
   search_type: "semantic" | "listing";
   query: string;
+  hasMore: boolean;
 };
+
+const PAGE_SIZE = 20;
 
 // ── LocalStorage helpers ──────────────────────────────────────────────────────
 
@@ -50,6 +55,11 @@ function getSaved(): Set<string> {
 
 function writeSaved(ids: Set<string>) {
   localStorage.setItem(SAVED_KEY, JSON.stringify([...ids]));
+}
+
+function trimAbstract(text: string): string {
+  if (text.length <= 300) return text;
+  return text.slice(0, 300) + "…";
 }
 
 // ── Skeleton cards ────────────────────────────────────────────────────────────
@@ -93,10 +103,15 @@ function ResultCard({
   const score = researcher.combined_score;
   const showBadge = typeof score === "number" && score > 0.5;
 
+  // Summary: prefer research_summary, fall back to most-cited pub abstract (pubs sorted desc by cited_by_count)
+  const summary =
+    researcher.research_summary ||
+    (researcher.pubs[0]?.abstract ? trimAbstract(researcher.pubs[0].abstract) : null);
+
   return (
     <div
       className="animate-fade-up relative group"
-      style={{ animationDelay: `${index * 50}ms` }}
+      style={{ animationDelay: `${Math.min(index % PAGE_SIZE, 9) * 50}ms` }}
     >
       <Link
         href={`/labs/${researcher.id}`}
@@ -163,10 +178,10 @@ function ResultCard({
           </div>
         )}
 
-        {/* Row 3: research summary */}
-        {researcher.research_summary && (
+        {/* Row 3: research summary (with fallback) */}
+        {summary && (
           <p className="text-[12px] text-zinc-500 leading-[1.65] line-clamp-3">
-            {researcher.research_summary}
+            {summary}
           </p>
         )}
 
@@ -293,6 +308,8 @@ export function SearchClient({ departments, initialQuery, initialDept }: Props) 
   const [results, setResults] = useState<ResearcherResult[]>([]);
   const [meta, setMeta] = useState<SearchMeta | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
   const urlTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -302,7 +319,7 @@ export function SearchClient({ departments, initialQuery, initialDept }: Props) 
     setSavedIds(getSaved());
   }, []);
 
-  // Debounced fetch
+  // Fresh fetch on query/dept change — resets pagination
   useEffect(() => {
     if (fetchTimer.current) clearTimeout(fetchTimer.current);
     fetchTimer.current = setTimeout(() => {
@@ -311,16 +328,21 @@ export function SearchClient({ departments, initialQuery, initialDept }: Props) 
       abortRef.current = controller;
 
       setLoading(true);
+      setResults([]);
+      setHasMore(false);
 
       const params = new URLSearchParams();
       if (query) params.set("q", query);
       if (dept) params.set("department", dept);
+      params.set("limit", String(PAGE_SIZE));
+      params.set("offset", "0");
 
       fetch(`/api/search?${params}`, { signal: controller.signal })
         .then((r) => r.json())
         .then(({ results: res, meta: m }) => {
           setResults(res ?? []);
           setMeta(m ?? null);
+          setHasMore(m?.hasMore ?? false);
           setLoading(false);
         })
         .catch((err) => {
@@ -359,6 +381,27 @@ export function SearchClient({ departments, initialQuery, initialDept }: Props) 
   }, []);
 
   const handleClear = useCallback(() => setDept(""), []);
+
+  async function handleLoadMore() {
+    if (loadingMore) return;
+    setLoadingMore(true);
+
+    const params = new URLSearchParams();
+    if (query) params.set("q", query);
+    if (dept) params.set("department", dept);
+    params.set("limit", String(PAGE_SIZE));
+    params.set("offset", String(results.length));
+
+    try {
+      const r = await fetch(`/api/search?${params}`);
+      const { results: newRes, meta: m } = await r.json();
+      setResults((prev) => [...prev, ...(newRes ?? [])]);
+      setMeta(m ?? null);
+      setHasMore(m?.hasMore ?? false);
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   const filterCount = dept ? 1 : 0;
 
@@ -494,17 +537,49 @@ export function SearchClient({ departments, initialQuery, initialDept }: Props) 
           ) : results.length === 0 ? (
             <EmptyState query={query} />
           ) : (
-            <div key={`${query}|${dept}`} className="flex flex-col gap-2">
-              {results.map((r, i) => (
-                <ResultCard
-                  key={r.id}
-                  researcher={r}
-                  saved={savedIds.has(r.id)}
-                  onSave={handleSave}
-                  index={i}
-                />
-              ))}
-            </div>
+            <>
+              <div key={`${query}|${dept}`} className="flex flex-col gap-2">
+                {results.map((r, i) => (
+                  <ResultCard
+                    key={r.id}
+                    researcher={r}
+                    saved={savedIds.has(r.id)}
+                    onSave={handleSave}
+                    index={i}
+                  />
+                ))}
+              </div>
+
+              {/* Load more */}
+              {hasMore && (
+                <div className="mt-6 flex justify-center">
+                  <button
+                    onClick={handleLoadMore}
+                    disabled={loadingMore}
+                    className={cn(
+                      "inline-flex items-center gap-2 h-9 px-5 rounded-[4px] text-[13px]",
+                      "border border-zinc-800 text-zinc-500",
+                      "transition-colors duration-100",
+                      loadingMore
+                        ? "cursor-not-allowed opacity-50"
+                        : "hover:border-zinc-600 hover:text-zinc-300"
+                    )}
+                  >
+                    {loadingMore ? (
+                      <>
+                        <Loader2 size={13} className="animate-spin" />
+                        Loading…
+                      </>
+                    ) : (
+                      <>
+                        <ChevronDown size={13} />
+                        Load more
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>

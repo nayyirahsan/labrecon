@@ -145,26 +145,28 @@ function EmptyState() {
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 export function TrackerClient() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [entries, setEntries] = useState<LocalEntry[]>([]);
   const [labMap, setLabMap] = useState(new Map<string, LabInfo>());
-  const [mounted, setMounted] = useState(false);
+  const [fetchDone, setFetchDone] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!user) {
-      setMounted(true);
-      return;
-    }
+  // mounted = auth resolved AND (no user, or the DB fetch finished)
+  const mounted = !authLoading && (!user || fetchDone);
 
+  useEffect(() => {
+    if (authLoading || !user) return;
+
+    let cancelled = false;
     const supabase = createBrowserClient();
     supabase
       .from("tracker_entries")
       .select("id, researcher_id, status, updated_at, created_at, researchers(id, name, department)")
       .eq("user_id", user.id)
       .then(({ data }) => {
+        if (cancelled) return;
         if (!data) {
-          setMounted(true);
+          setFetchDone(true);
           return;
         }
 
@@ -198,9 +200,10 @@ export function TrackerClient() {
 
         setLabMap(newLabMap);
         setEntries(newEntries);
-        setMounted(true);
+        setFetchDone(true);
       });
-  }, [user]);
+    return () => { cancelled = true; };
+  }, [user, authLoading]);
 
   const updateStatus = useCallback(
     async (labId: string, status: TrackerStatus) => {

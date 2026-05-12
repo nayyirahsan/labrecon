@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { createBrowserClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
@@ -27,6 +27,8 @@ const inputCls = cn(
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const next = searchParams.get("next") ?? "/";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -42,7 +44,7 @@ export default function LoginPage() {
       setError(error.message);
       setLoading(false);
     } else {
-      router.push("/");
+      router.push(next.startsWith("/") ? next : "/");
       router.refresh();
     }
   }
@@ -51,7 +53,9 @@ export default function LoginPage() {
     const supabase = createBrowserClient();
     await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next.startsWith("/") ? next : "/")}`,
+      },
     });
   }
 

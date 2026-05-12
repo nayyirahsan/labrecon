@@ -1,6 +1,6 @@
 export const dynamic = 'force-dynamic';
 
-import { count, desc, isNotNull } from "drizzle-orm";
+import { count, desc, inArray, isNotNull } from "drizzle-orm";
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { grants, researchers, publications } from "@/lib/db/schema";
@@ -49,6 +49,25 @@ export default async function HomePage() {
     ]);
   } catch (e) {
     console.error('DB query failed:', e);
+  }
+
+  // Fetch top pub per active lab for summary fallback
+  const topPubMap = new Map<string, string>();
+  if (activeLabs.length > 0) {
+    try {
+      const topPubs = await db
+        .select({ researcher_id: publications.researcher_id, abstract: publications.abstract })
+        .from(publications)
+        .where(inArray(publications.researcher_id, activeLabs.map((r) => r.id)))
+        .orderBy(desc(publications.cited_by_count));
+      for (const pub of topPubs) {
+        if (pub.researcher_id && pub.abstract && !topPubMap.has(pub.researcher_id)) {
+          topPubMap.set(pub.researcher_id, pub.abstract);
+        }
+      }
+    } catch (e) {
+      console.error('DB query failed:', e);
+    }
   }
 
   const estimatedPubCount = Math.round(labCount * 2.8);
@@ -181,7 +200,7 @@ export default async function HomePage() {
         >
           {activeLabs.map((researcher) => (
             <div key={researcher.id} className="w-[280px] sm:w-[300px] shrink-0">
-              <LabCard researcher={researcher} />
+              <LabCard researcher={researcher} topPubAbstract={topPubMap.get(researcher.id) ?? null} />
             </div>
           ))}
           {/* Fade-out right edge */}

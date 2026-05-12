@@ -13,7 +13,8 @@
       "Bash(curl -s -o /dev/null -w \"second: %{time_total}s\\\\n\" http://localhost:3000)",
       "Bash(curl -v --max-time 20 http://localhost:3000)",
       "Bash(node *)",
-      "Bash(curl *)"
+      "Bash(curl *)",
+      "Bash(npm install *)"
     ]
   }
 }

@@ -16,8 +16,10 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const q = url.searchParams.get("q")?.trim() ?? "";
   const department = url.searchParams.get("department")?.trim() ?? "";
-  const rawLimit = Number(url.searchParams.get("limit") ?? "100");
-  const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(rawLimit, 1), 200) : 100;
+  const rawLimit = Number(url.searchParams.get("limit") ?? "20");
+  const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(rawLimit, 1), 200) : 20;
+  const rawOffset = Number(url.searchParams.get("offset") ?? "0");
+  const offset = Number.isFinite(rawOffset) ? Math.max(rawOffset, 0) : 0;
 
   increment("search_requests");
   const start = Date.now();
@@ -30,7 +32,7 @@ export async function GET(req: Request) {
     if (department) {
       query = query.where(sql`${researchers.department} = ${department}`);
     }
-    rows = (await query.limit(limit)) as ResearcherRow[];
+    rows = (await query.limit(limit).offset(offset)) as ResearcherRow[];
   } else {
     const embedding = await generateQueryEmbedding(q);
     const embeddingStr = `[${embedding.join(",")}]`;
@@ -57,7 +59,7 @@ export async function GET(req: Request) {
       WHERE r.embedding IS NOT NULL
       ${deptClause}
       ORDER BY combined_score DESC
-      LIMIT ${limit}
+      LIMIT ${limit} OFFSET ${offset}
     `);
 
     rows = result as unknown as ResearcherRow[];
@@ -99,8 +101,10 @@ export async function GET(req: Request) {
     })
   );
 
+  const hasMore = results.length === limit;
+
   return Response.json(
-    { results, meta: { count: results.length, duration_ms, search_type, query: q } },
+    { results, meta: { count: results.length, duration_ms, search_type, query: q, hasMore } },
     {
       headers: {
         "X-Search-Duration": String(duration_ms),

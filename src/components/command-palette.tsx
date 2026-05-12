@@ -21,13 +21,24 @@ export function CommandPalette({ labCount }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
+  const openRef = useRef(false);
   const router = useRouter();
 
-  // Open / close on Cmd+K
+  useEffect(() => {
+    openRef.current = open;
+  }, [open]);
+
+  // Open / close on Cmd+K — reset state in the event handler to avoid effect-driven setState
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
+        if (!openRef.current) {
+          setQuery("");
+          setResults([]);
+          setSelected(0);
+          setTimeout(() => inputRef.current?.focus(), 30);
+        }
         setOpen((o) => !o);
       }
       if (e.key === "Escape") setOpen(false);
@@ -36,25 +47,13 @@ export function CommandPalette({ labCount }: Props) {
     return () => document.removeEventListener("keydown", onKey);
   }, []);
 
-  // Focus + reset on open
-  useEffect(() => {
-    if (open) {
-      setQuery("");
-      setResults([]);
-      setSelected(0);
-      setTimeout(() => inputRef.current?.focus(), 30);
-    }
-  }, [open]);
-
   // Debounced fetch — 200ms after last keystroke, abort previous in-flight
+  // Empty results are derived in render (query.trim() ? results : []) so no synchronous setState needed
   useEffect(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
     controllerRef.current?.abort();
 
-    if (!query.trim()) {
-      setResults([]);
-      return;
-    }
+    if (!query.trim()) return;
 
     timerRef.current = setTimeout(() => {
       const controller = new AbortController();
@@ -87,20 +86,23 @@ export function CommandPalette({ labCount }: Props) {
   function onKeyDown(e: React.KeyboardEvent) {
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setSelected((s) => Math.min(s + 1, results.length - 1));
+      setSelected((s) => Math.min(s + 1, displayResults.length - 1));
     }
     if (e.key === "ArrowUp") {
       e.preventDefault();
       setSelected((s) => Math.max(s - 1, 0));
     }
-    if (e.key === "Enter" && results[selected]) {
-      navigate(results[selected].id);
+    if (e.key === "Enter" && displayResults[selected]) {
+      navigate(displayResults[selected].id);
     }
-    if (e.key === "Enter" && !results.length && query.trim()) {
+    if (e.key === "Enter" && !displayResults.length && query.trim()) {
       setOpen(false);
       router.push(`/search?q=${encodeURIComponent(query)}`);
     }
   }
+
+  // Derive display results: treat empty query as no results without clearing state
+  const displayResults = query.trim() ? results : [];
 
   if (!open) return null;
 
@@ -145,9 +147,9 @@ export function CommandPalette({ labCount }: Props) {
           </div>
 
           {/* Results */}
-          {results.length > 0 && (
+          {displayResults.length > 0 && (
             <div className="py-1">
-              {results.map((r, i) => (
+              {displayResults.map((r, i) => (
                 <button
                   key={r.id}
                   onClick={() => navigate(r.id)}
@@ -176,11 +178,11 @@ export function CommandPalette({ labCount }: Props) {
           )}
 
           {/* No results */}
-          {query.trim() && results.length === 0 && (
+          {query.trim() && displayResults.length === 0 && (
             <div className="px-4 py-6 text-center">
               <p className="text-[12px] text-zinc-600">
                 No results for{" "}
-                <span className="text-zinc-400">"{query}"</span>
+                <span className="text-zinc-400">&ldquo;{query}&rdquo;</span>
               </p>
               <p className="text-[11px] text-zinc-700 mt-1">
                 Press ↵ to search all researchers

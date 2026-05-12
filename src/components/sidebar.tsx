@@ -1,16 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import {
   FlaskConical,
+  LogIn,
+  LogOut,
   Search,
   BookMarked,
   PanelLeftClose,
   PanelLeftOpen,
+  User,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/components/auth-provider";
+import { createBrowserClient } from "@/lib/supabase/client";
 
 const navItems = [
   { href: "/search", label: "Search Labs", icon: Search },
@@ -20,6 +25,15 @@ const navItems = [
 export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const pathname = usePathname();
+  const router = useRouter();
+  const { user, loading } = useAuth();
+
+  async function handleSignOut() {
+    const supabase = createBrowserClient();
+    await supabase.auth.signOut();
+    router.push("/");
+    router.refresh();
+  }
 
   return (
     <aside
@@ -89,6 +103,49 @@ export function Sidebar() {
               <kbd className="px-1 py-px bg-zinc-900 border border-zinc-800 rounded-[2px] font-mono text-zinc-600">K</kbd>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Auth section */}
+      {!loading && (
+        <div className={cn("border-t border-zinc-800/60 p-1.5", collapsed && "flex justify-center")}>
+          {user ? (
+            <div className={cn("flex items-center gap-1.5", collapsed ? "flex-col" : "px-2 h-9")}>
+              {!collapsed && (
+                <>
+                  <User size={13} className="text-zinc-600 shrink-0" aria-hidden="true" />
+                  <span className="text-[12px] text-zinc-600 truncate flex-1 min-w-0" title={user.email}>
+                    {user.email}
+                  </span>
+                </>
+              )}
+              <button
+                onClick={handleSignOut}
+                aria-label="Sign out"
+                title={collapsed ? "Sign out" : undefined}
+                className={cn(
+                  "flex items-center justify-center rounded-[4px]",
+                  "text-zinc-600 hover:text-zinc-400 hover:bg-zinc-800/50 transition-colors duration-100",
+                  collapsed ? "size-8 w-full" : "size-7 shrink-0"
+                )}
+              >
+                <LogOut size={13} aria-hidden="true" />
+              </button>
+            </div>
+          ) : (
+            <Link
+              href="/login"
+              aria-label={collapsed ? "Sign in" : undefined}
+              className={cn(
+                "flex items-center gap-2.5 h-9 px-2 rounded-[4px] text-[13px]",
+                "text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800/50 transition-colors duration-100",
+                collapsed && "justify-center"
+              )}
+            >
+              <LogIn size={14} className="shrink-0" aria-hidden="true" />
+              {!collapsed && <span className="whitespace-nowrap">Sign in</span>}
+            </Link>
+          )}
         </div>
       )}
 

@@ -4,9 +4,20 @@ import Link from "next/link";
 import { type Researcher } from "@/lib/db/schema";
 import { cn } from "@/lib/utils";
 
-type Props = { researcher: Omit<Researcher, 'embedding'> & { embedding?: Researcher['embedding'] } };
+type Props = {
+  researcher: Omit<Researcher, 'embedding'> & { embedding?: Researcher['embedding'] };
+  topPubAbstract?: string | null;
+};
 
-export function LabCard({ researcher }: Props) {
+export function LabCard({ researcher, topPubAbstract }: Props) {
+  const summary =
+    researcher.research_summary ||
+    (topPubAbstract
+      ? topPubAbstract.length > 300
+        ? topPubAbstract.slice(0, 300) + "…"
+        : topPubAbstract
+      : null);
+
   return (
     <Link
       href={`/labs/${researcher.id}`}
@@ -35,9 +46,11 @@ export function LabCard({ researcher }: Props) {
       </div>
 
       {/* Research summary — 2-line clamp */}
-      <p className="text-[12px] text-zinc-500 leading-[1.6] line-clamp-2 flex-1">
-        {researcher.research_summary}
-      </p>
+      {summary && (
+        <p className="text-[12px] text-zinc-500 leading-[1.6] line-clamp-2 flex-1">
+          {summary}
+        </p>
+      )}
     </Link>
   );
 }

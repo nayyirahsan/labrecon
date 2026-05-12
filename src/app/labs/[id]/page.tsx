@@ -1,6 +1,6 @@
 export const dynamic = 'force-dynamic';
 
-import { and, desc, eq, ne } from "drizzle-orm";
+import { and, desc, eq, inArray, ne } from "drizzle-orm";
 import { ExternalLink, ChevronLeft, GraduationCap } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -82,7 +82,12 @@ function Section({
   );
 }
 
-function SimilarLabCard({ researcher }: { researcher: Researcher }) {
+function SimilarLabCard({ researcher, topPubAbstract }: { researcher: Researcher; topPubAbstract?: string | null }) {
+  const summary =
+    researcher.research_summary ||
+    (topPubAbstract
+      ? topPubAbstract.length > 300 ? topPubAbstract.slice(0, 300) + "…" : topPubAbstract
+      : null);
   return (
     <Link
       href={`/labs/${researcher.id}`}
@@ -107,9 +112,9 @@ function SimilarLabCard({ researcher }: { researcher: Researcher }) {
         </p>
       )}
 
-      {researcher.research_summary && (
+      {summary && (
         <p className="text-[11px] text-zinc-600 leading-[1.55] line-clamp-2 mt-auto">
-          {researcher.research_summary}
+          {summary}
         </p>
       )}
     </Link>
@@ -216,8 +221,35 @@ export default async function LabPage({ params }: { params: Params }) {
     console.error('DB query failed:', e);
   }
 
+  // Fetch top pub abstract per similar lab for summary fallback
+  const similarLabPubMap = new Map<string, string>();
+  if (similarLabs.length > 0) {
+    try {
+      const slPubs = await withTimeout(
+        db
+          .select({ researcher_id: publications.researcher_id, abstract: publications.abstract })
+          .from(publications)
+          .where(inArray(publications.researcher_id, similarLabs.map((sl) => sl.id)))
+          .orderBy(desc(publications.cited_by_count)),
+        8000,
+        []
+      );
+      for (const pub of slPubs) {
+        if (pub.researcher_id && pub.abstract && !similarLabPubMap.has(pub.researcher_id)) {
+          similarLabPubMap.set(pub.researcher_id, pub.abstract);
+        }
+      }
+    } catch (e) {
+      console.error('DB query failed:', e);
+    }
+  }
+
   const hasPubs = pubs.length > 0;
   const pubYears = pubs.map((p) => p.year).filter((y): y is number => y !== null);
+  const mostCitedPub = pubs.reduce<typeof pubs[number] | null>(
+    (best, p) => (!best || (p.cited_by_count ?? 0) > (best.cited_by_count ?? 0) ? p : best),
+    null
+  );
   const isUndergradFriendly = false;
 
   return (
@@ -280,11 +312,18 @@ export default async function LabPage({ params }: { params: Params }) {
       <Rule />
 
       {/* ── Research Summary ─────────────────────────────────────── */}
-      <Section label="Research Overview" delay={80}>
-        <p className="text-[14px] text-zinc-400 leading-[1.85] max-w-prose">
-          {lab.research_summary}
-        </p>
-      </Section>
+      {(lab.research_summary || mostCitedPub?.abstract) && (
+        <Section label="Research Overview" delay={80}>
+          <p className="text-[14px] text-zinc-400 leading-[1.85] max-w-prose">
+            {lab.research_summary ||
+              (mostCitedPub?.abstract
+                ? mostCitedPub.abstract.length > 300
+                  ? mostCitedPub.abstract.slice(0, 300) + "…"
+                  : mostCitedPub.abstract
+                : null)}
+          </p>
+        </Section>
+      )}
 
       {hasPubs && (
         <>
@@ -448,7 +487,7 @@ export default async function LabPage({ params }: { params: Params }) {
             <SectionHeader label="Similar Labs" />
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {similarLabs.map((sl) => (
-                <SimilarLabCard key={sl.id} researcher={sl} />
+                <SimilarLabCard key={sl.id} researcher={sl} topPubAbstract={similarLabPubMap.get(sl.id) ?? null} />
               ))}
             </div>
           </section>

@@ -7,15 +7,16 @@ import { createBrowserClient } from "@/lib/supabase/client";
 import { useAuth } from "@/components/auth-provider";
 
 export function SaveButton({ labId }: { labId: string }) {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [saved, setSaved] = useState(false);
-  const [mounted, setMounted] = useState(false);
+  const [checkDone, setCheckDone] = useState(false);
+
+  // mounted = auth resolved AND (no user, or we finished the DB check)
+  const mounted = !authLoading && (!user || checkDone);
 
   useEffect(() => {
-    if (!user) {
-      setMounted(true);
-      return;
-    }
+    if (authLoading || !user) return;
+    let cancelled = false;
     const supabase = createBrowserClient();
     supabase
       .from("tracker_entries")
@@ -24,10 +25,12 @@ export function SaveButton({ labId }: { labId: string }) {
       .eq("user_id", user.id)
       .maybeSingle()
       .then(({ data }) => {
+        if (cancelled) return;
         setSaved(!!data);
-        setMounted(true);
+        setCheckDone(true);
       });
-  }, [labId, user]);
+    return () => { cancelled = true; };
+  }, [labId, user, authLoading]);
 
   async function toggle() {
     if (!user) return;
