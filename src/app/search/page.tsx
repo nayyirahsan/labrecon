@@ -2,16 +2,26 @@ export const dynamic = 'force-dynamic';
 
 import { Suspense } from "react";
 import { db } from "@/lib/db";
+import { withTimeout } from "@/lib/db/query";
 import { researchers } from "@/lib/db/schema";
 import { sql } from "drizzle-orm";
 import { SearchClient } from "./search-client";
 
 async function fetchDepartments(): Promise<string[]> {
-  const rows = await db
-    .selectDistinct({ department: researchers.department })
-    .from(researchers)
-    .where(sql`${researchers.department} IS NOT NULL`);
-  return rows.map((r) => r.department as string).sort((a, b) => a.localeCompare(b));
+  try {
+    const rows = await withTimeout(
+      db
+        .selectDistinct({ department: researchers.department })
+        .from(researchers)
+        .where(sql`${researchers.department} IS NOT NULL`),
+      8000,
+      []
+    );
+    return rows.map((r) => r.department as string).sort((a, b) => a.localeCompare(b));
+  } catch (e) {
+    console.error('DB query failed:', e);
+    return [];
+  }
 }
 
 type SearchParams = { q?: string; department?: string };

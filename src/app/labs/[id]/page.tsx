@@ -5,6 +5,7 @@ import { ExternalLink, ChevronLeft, GraduationCap } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
+import { withTimeout } from "@/lib/db/query";
 import { grants, researchers, publications } from "@/lib/db/schema";
 import type { Researcher } from "@/lib/db/schema";
 import { cn } from "@/lib/utils";
@@ -121,51 +122,99 @@ type Params = Promise<{ id: string }>;
 
 export async function generateMetadata({ params }: { params: Params }) {
   const { id } = await params;
-  const [lab] = await db.select().from(researchers).where(eq(researchers.id, id));
-  if (!lab) return {};
-  return {
-    title: `${lab.name} | LabRecon`,
-    description: lab.research_summary?.slice(0, 160) ?? undefined,
-  };
+  try {
+    const [lab] = await withTimeout(
+      db.select().from(researchers).where(eq(researchers.id, id)),
+      8000,
+      []
+    );
+    if (!lab) return {};
+    return {
+      title: `${lab.name} | LabRecon`,
+      description: lab.research_summary?.slice(0, 160) ?? undefined,
+    };
+  } catch (e) {
+    console.error('DB query failed:', e);
+    return {};
+  }
 }
 
 export default async function LabPage({ params }: { params: Params }) {
   const { id } = await params;
 
-  const [lab] = await db.select().from(researchers).where(eq(researchers.id, id));
+  let lab: typeof researchers.$inferSelect | undefined;
+  let pubs: (typeof publications.$inferSelect)[] = [];
+  let grantList: (typeof grants.$inferSelect)[] = [];
+  let similarLabs: (typeof researchers.$inferSelect)[] = [];
+
+  try {
+    const rows = await withTimeout(
+      db.select().from(researchers).where(eq(researchers.id, id)),
+      8000,
+      []
+    );
+    lab = rows[0];
+  } catch (e) {
+    console.error('DB query failed:', e);
+  }
+
   if (!lab) notFound();
 
-  const pubs = await db
-    .select()
-    .from(publications)
-    .where(eq(publications.researcher_id, id))
-    .orderBy(desc(publications.year))
+  try {
+    pubs = await withTimeout(
+      db
+        .select()
+        .from(publications)
+        .where(eq(publications.researcher_id, id))
+        .orderBy(desc(publications.year)),
+      8000,
+      []
+    );
+  } catch (e) {
+    console.error('DB query failed:', e);
+  }
 
-  const grantList = await db
-    .select()
-    .from(grants)
-    .where(eq(grants.researcher_id, id));
+  try {
+    grantList = await withTimeout(
+      db.select().from(grants).where(eq(grants.researcher_id, id)),
+      8000,
+      []
+    );
+  } catch (e) {
+    console.error('DB query failed:', e);
+  }
 
-  // Similar researchers: same department first, fill with cross-department
-  const sameDept = await db
-    .select()
-    .from(researchers)
-    .where(and(eq(researchers.department, lab.department ?? ""), ne(researchers.id, id)))
-    .orderBy(desc(researchers.last_updated_at))
-    .limit(4);
+  try {
+    const sameDept = await withTimeout(
+      db
+        .select()
+        .from(researchers)
+        .where(and(eq(researchers.department, lab.department ?? ""), ne(researchers.id, id)))
+        .orderBy(desc(researchers.last_updated_at))
+        .limit(4),
+      8000,
+      []
+    );
 
-  const similarLabs =
-    sameDept.length >= 4
-      ? sameDept
-      : [
-          ...sameDept,
-          ...(await db
-            .select()
-            .from(researchers)
-            .where(and(ne(researchers.department, lab.department ?? ""), ne(researchers.id, id)))
-            .orderBy(desc(researchers.last_updated_at))
-            .limit(4 - sameDept.length)),
-        ];
+    similarLabs =
+      sameDept.length >= 4
+        ? sameDept
+        : [
+            ...sameDept,
+            ...(await withTimeout(
+              db
+                .select()
+                .from(researchers)
+                .where(and(ne(researchers.department, lab.department ?? ""), ne(researchers.id, id)))
+                .orderBy(desc(researchers.last_updated_at))
+                .limit(4 - sameDept.length),
+              8000,
+              []
+            )),
+          ];
+  } catch (e) {
+    console.error('DB query failed:', e);
+  }
 
   const hasPubs = pubs.length > 0;
   const pubYears = pubs.map((p) => p.year).filter((y): y is number => y !== null);

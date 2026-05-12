@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic';
 import { count, desc, isNotNull } from "drizzle-orm";
 import Link from "next/link";
 import { db } from "@/lib/db";
+import { withTimeout } from "@/lib/db/query";
 import { grants, researchers, publications } from "@/lib/db/schema";
 import { LabCard } from "@/components/lab-card";
 import { SearchForm } from "@/components/search-form";
@@ -18,9 +19,41 @@ const TRENDING = [
 ] as const;
 
 export default async function HomePage() {
-  const labCount = (await db.select({ v: count() }).from(researchers))[0]?.v ?? 0;
-  const actualPubCount = (await db.select({ v: count() }).from(publications))[0]?.v ?? 0;
-  const actualGrantCount = (await db.select({ v: count() }).from(grants))[0]?.v ?? 0;
+  let labCount = 0;
+  let actualPubCount = 0;
+  let actualGrantCount = 0;
+  let activeLabs: (typeof researchers.$inferSelect)[] = [];
+
+  try {
+    labCount = await withTimeout(
+      db.select({ v: count() }).from(researchers).then(r => r[0]?.v ?? 0),
+      8000,
+      0
+    );
+    actualPubCount = await withTimeout(
+      db.select({ v: count() }).from(publications).then(r => r[0]?.v ?? 0),
+      8000,
+      0
+    );
+    actualGrantCount = await withTimeout(
+      db.select({ v: count() }).from(grants).then(r => r[0]?.v ?? 0),
+      8000,
+      0
+    );
+    activeLabs = await withTimeout(
+      db
+        .select({ researcher: researchers })
+        .from(researchers)
+        .where(isNotNull(researchers.profile_url))
+        .orderBy(desc(researchers.last_updated_at))
+        .limit(8)
+        .then(rows => rows.map(r => r.researcher)),
+      8000,
+      []
+    );
+  } catch (e) {
+    console.error('DB query failed:', e);
+  }
 
   const estimatedPubCount = Math.round(labCount * 2.8);
   const estimatedGrantCount = Math.round(labCount * 1.4);
@@ -32,15 +65,6 @@ export default async function HomePage() {
     { value: pubCount, label: "Publications" },
     { value: grantCount, label: "Active grants" },
   ];
-
-  const activeLabs = (
-    await db
-      .select({ researcher: researchers })
-      .from(researchers)
-      .where(isNotNull(researchers.profile_url))
-      .orderBy(desc(researchers.last_updated_at))
-      .limit(8)
-  ).map((r) => r.researcher);
 
   return (
     <div className="flex flex-col min-h-full">
