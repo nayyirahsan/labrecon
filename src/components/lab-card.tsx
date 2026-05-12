@@ -4,7 +4,7 @@ import Link from "next/link";
 import { type Researcher } from "@/lib/db/schema";
 import { cn } from "@/lib/utils";
 
-type Props = { researcher: Researcher };
+type Props = { researcher: Omit<Researcher, 'embedding'> & { embedding?: Researcher['embedding'] } };
 
 export function LabCard({ researcher }: Props) {
   return (
