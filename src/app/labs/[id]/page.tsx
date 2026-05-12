@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 import { and, desc, eq, ne } from "drizzle-orm";
 import { ExternalLink, ChevronLeft, GraduationCap } from "lucide-react";
 import Link from "next/link";
