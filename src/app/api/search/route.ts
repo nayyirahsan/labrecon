@@ -16,8 +16,8 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const q = url.searchParams.get("q")?.trim() ?? "";
   const department = url.searchParams.get("department")?.trim() ?? "";
-  const rawLimit = Number(url.searchParams.get("limit") ?? "20");
-  const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(rawLimit, 1), 50) : 20;
+  const rawLimit = Number(url.searchParams.get("limit") ?? "100");
+  const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(rawLimit, 1), 200) : 100;
 
   increment("search_requests");
   const start = Date.now();

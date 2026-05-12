@@ -3,7 +3,8 @@
     "allow": [
       "Bash(npm run *)",
       "Bash(npx tsc *)",
-      "Bash(npx vercel *)"
+      "Bash(npx vercel *)",
+      "Bash(xargs cat)"
     ]
   }
 }

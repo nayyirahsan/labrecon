@@ -3,7 +3,6 @@ export const dynamic = 'force-dynamic';
 import { count, desc, isNotNull } from "drizzle-orm";
 import Link from "next/link";
 import { db } from "@/lib/db";
-import { withTimeout } from "@/lib/db/query";
 import { grants, researchers, publications } from "@/lib/db/schema";
 import { LabCard } from "@/components/lab-card";
 import { SearchForm } from "@/components/search-form";
@@ -25,22 +24,10 @@ export default async function HomePage() {
   let activeLabs: (typeof researchers.$inferSelect)[] = [];
 
   try {
-    labCount = await withTimeout(
+    [labCount, actualPubCount, actualGrantCount, activeLabs] = await Promise.all([
       db.select({ v: count() }).from(researchers).then(r => r[0]?.v ?? 0),
-      8000,
-      0
-    );
-    actualPubCount = await withTimeout(
       db.select({ v: count() }).from(publications).then(r => r[0]?.v ?? 0),
-      8000,
-      0
-    );
-    actualGrantCount = await withTimeout(
       db.select({ v: count() }).from(grants).then(r => r[0]?.v ?? 0),
-      8000,
-      0
-    );
-    activeLabs = await withTimeout(
       db
         .select({ researcher: researchers })
         .from(researchers)
@@ -48,9 +35,7 @@ export default async function HomePage() {
         .orderBy(desc(researchers.last_updated_at))
         .limit(8)
         .then(rows => rows.map(r => r.researcher)),
-      8000,
-      []
-    );
+    ]);
   } catch (e) {
     console.error('DB query failed:', e);
   }
