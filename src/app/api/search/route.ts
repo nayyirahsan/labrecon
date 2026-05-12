@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { researchers, publications } from "@/lib/db/schema";
 import { sql, desc, inArray } from "drizzle-orm";
 import { generateQueryEmbedding } from "@/lib/embeddings";
+import { increment } from "@/lib/metrics";
 
 export const runtime = "nodejs";
 
@@ -18,6 +19,7 @@ export async function GET(req: Request) {
   const rawLimit = Number(url.searchParams.get("limit") ?? "20");
   const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(rawLimit, 1), 50) : 20;
 
+  increment("search_requests");
   const start = Date.now();
   const search_type = q ? "semantic" : "listing";
 

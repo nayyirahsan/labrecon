@@ -3,6 +3,7 @@ import { and, count, desc, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { email_generations, publications, researchers, user_profiles } from "@/lib/db/schema";
 import { createServerClient } from "@/lib/supabase/server";
+import { increment } from "@/lib/metrics";
 
 const anthropic = new Anthropic();
 
@@ -200,6 +201,7 @@ CRITICAL REQUIREMENTS:
       user_id: user.id,
       researcher_id,
     });
+    increment("email_generations");
 
     const newTotal = generationsToday + 1;
 

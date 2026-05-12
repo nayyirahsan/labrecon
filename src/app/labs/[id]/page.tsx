@@ -3,8 +3,8 @@ import { ExternalLink, ChevronLeft, GraduationCap } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
-import { grants, labs, publications } from "@/lib/db/schema";
-import type { Lab } from "@/lib/db/schema";
+import { grants, researchers, publications } from "@/lib/db/schema";
+import type { Researcher } from "@/lib/db/schema";
 import { cn } from "@/lib/utils";
 import { EmailSheet } from "@/components/email-sheet";
 import { SaveButton } from "./save-button";
@@ -12,33 +12,15 @@ import { PubSparkline } from "@/components/pub-sparkline";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function activityLabel(score: number) {
-  if (score >= 75) return "Active";
-  if (score >= 50) return "Moderate";
-  return "Stale";
-}
-
-function activityColors(score: number) {
-  if (score >= 75)
-    return "text-emerald-400 bg-emerald-500/8 border-emerald-500/20";
-  if (score >= 50)
-    return "text-amber-400 bg-amber-500/8 border-amber-500/20";
-  return "text-red-400 bg-red-500/8 border-red-500/20";
-}
-
-function activityDot(score: number) {
-  if (score >= 75) return "bg-emerald-500";
-  if (score >= 50) return "bg-amber-500";
-  return "bg-red-500";
-}
-
-function formatUSD(amount: number | null): string {
+function formatUSD(amount: string | null): string {
   if (!amount) return "—";
+  const n = parseFloat(amount.replace(/[^0-9.-]/g, ""));
+  if (!Number.isFinite(n)) return amount;
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
     maximumFractionDigits: 0,
-  }).format(amount);
+  }).format(n);
 }
 
 function displayHost(url: string): string {
@@ -97,12 +79,10 @@ function Section({
   );
 }
 
-function SimilarLabCard({ lab }: { lab: Lab }) {
-  const skills = JSON.parse(lab.skills) as string[];
-
+function SimilarLabCard({ researcher }: { researcher: Researcher }) {
   return (
     <Link
-      href={`/labs/${lab.id}`}
+      href={`/labs/${researcher.id}`}
       className={cn(
         "flex flex-col gap-2 p-4",
         "bg-zinc-900 border border-zinc-800 rounded-[4px]",
@@ -111,37 +91,23 @@ function SimilarLabCard({ lab }: { lab: Lab }) {
         "hover:shadow-[0_4px_16px_rgba(59,130,246,0.04)]"
       )}
     >
-      <div className="flex items-start justify-between gap-2">
-        <h3
-          className="text-[13px] text-zinc-100 leading-snug"
-          style={{ fontFamily: "var(--font-display)" }}
-        >
-          {lab.piName}
-        </h3>
-        <span
-          className={cn(
-            "size-[6px] rounded-full mt-[5px] shrink-0",
-            activityDot(lab.activityScore)
-          )}
-          title={activityLabel(lab.activityScore)}
-        />
-      </div>
+      <h3
+        className="text-[13px] text-zinc-100 leading-snug"
+        style={{ fontFamily: "var(--font-display)" }}
+      >
+        {researcher.name}
+      </h3>
 
-      <p className="text-[10px] text-zinc-600 uppercase tracking-wide truncate -mt-0.5">
-        {lab.labName}
-      </p>
+      {researcher.department && (
+        <p className="text-[10px] text-zinc-600 uppercase tracking-wide truncate -mt-0.5">
+          {researcher.department}
+        </p>
+      )}
 
-      {skills.length > 0 && (
-        <div className="flex flex-wrap gap-1 mt-auto">
-          {skills.slice(0, 3).map((s) => (
-            <span
-              key={s}
-              className="inline-block px-1.5 py-[3px] text-[9px] text-zinc-500 bg-zinc-800/60 rounded-[2px] leading-none"
-            >
-              {s}
-            </span>
-          ))}
-        </div>
+      {researcher.research_summary && (
+        <p className="text-[11px] text-zinc-600 leading-[1.55] line-clamp-2 mt-auto">
+          {researcher.research_summary}
+        </p>
       )}
     </Link>
   );
@@ -153,64 +119,55 @@ type Params = Promise<{ id: string }>;
 
 export async function generateMetadata({ params }: { params: Params }) {
   const { id } = await params;
-  const labId = parseInt(id, 10);
-  if (isNaN(labId)) return {};
-  const lab = db.select().from(labs).where(eq(labs.id, labId)).get();
+  const [lab] = await db.select().from(researchers).where(eq(researchers.id, id));
   if (!lab) return {};
   return {
-    title: `${lab.piName} — ${lab.labName} | LabRecon`,
-    description: lab.researchSummary.slice(0, 160),
+    title: `${lab.name} | LabRecon`,
+    description: lab.research_summary?.slice(0, 160) ?? undefined,
   };
 }
 
 export default async function LabPage({ params }: { params: Params }) {
   const { id } = await params;
-  const labId = parseInt(id, 10);
-  if (isNaN(labId)) notFound();
 
-  const lab = db.select().from(labs).where(eq(labs.id, labId)).get();
+  const [lab] = await db.select().from(researchers).where(eq(researchers.id, id));
   if (!lab) notFound();
 
-  const pubs = db
+  const pubs = await db
     .select()
     .from(publications)
-    .where(eq(publications.labId, labId))
+    .where(eq(publications.researcher_id, id))
     .orderBy(desc(publications.year))
-    .all();
 
-  const grantList = db
+  const grantList = await db
     .select()
     .from(grants)
-    .where(eq(grants.labId, labId))
-    .all();
+    .where(eq(grants.researcher_id, id));
 
-  // Similar labs: same department first, fill with cross-department
-  const sameDept = db
+  // Similar researchers: same department first, fill with cross-department
+  const sameDept = await db
     .select()
-    .from(labs)
-    .where(and(eq(labs.department, lab.department), ne(labs.id, labId)))
-    .orderBy(desc(labs.activityScore))
-    .limit(4)
-    .all();
+    .from(researchers)
+    .where(and(eq(researchers.department, lab.department ?? ""), ne(researchers.id, id)))
+    .orderBy(desc(researchers.last_updated_at))
+    .limit(4);
 
   const similarLabs =
     sameDept.length >= 4
       ? sameDept
       : [
           ...sameDept,
-          ...db
+          ...(await db
             .select()
-            .from(labs)
-            .where(and(ne(labs.department, lab.department), ne(labs.id, labId)))
-            .orderBy(desc(labs.activityScore))
-            .limit(4 - sameDept.length)
-            .all(),
+            .from(researchers)
+            .where(and(ne(researchers.department, lab.department ?? ""), ne(researchers.id, id)))
+            .orderBy(desc(researchers.last_updated_at))
+            .limit(4 - sameDept.length)),
         ];
 
-  const skills = JSON.parse(lab.skills) as string[];
   const hasPubs = pubs.length > 0;
-  const pubYears = pubs.map((p) => p.year);
-  const isUndergradFriendly = lab.activityScore >= 80;
+  const pubYears = pubs.map((p) => p.year).filter((y): y is number => y !== null);
+  const isUndergradFriendly = false;
 
   return (
     <div className="max-w-3xl mx-auto px-4 sm:px-8 py-10 pb-20">
@@ -223,7 +180,7 @@ export default async function LabPage({ params }: { params: Params }) {
         All labs
       </Link>
 
-      {/* ── Header ───────────────────────────────────────────────── */}
+      {/* ── Header ───────────────────────────────────────────── */}
       <div
         className="flex items-start justify-between gap-6 mb-3 animate-fade-up"
         style={{ animationDelay: "0ms" }}
@@ -233,58 +190,39 @@ export default async function LabPage({ params }: { params: Params }) {
             className="text-[36px] leading-[1.06] text-zinc-50 mb-2 text-pretty"
             style={{ fontFamily: "var(--font-display)" }}
           >
-            {lab.piName}
+            {lab.name}
           </h1>
-          <p className="text-[13px] text-zinc-500 leading-relaxed">
-            {lab.piTitle}
-          </p>
-          <p className="text-[13px] text-zinc-600 mt-0.5">
-            {lab.department}
-            <span className="text-zinc-800 mx-2">·</span>
-            {lab.college}
-          </p>
+          {lab.title && (
+            <p className="text-[13px] text-zinc-500 leading-relaxed">
+              {lab.title}
+            </p>
+          )}
+          {lab.department && (
+            <p className="text-[13px] text-zinc-600 mt-0.5">
+              {lab.department}
+            </p>
+          )}
 
-          {lab.labWebsite && (
+          {lab.profile_url && (
             <a
-              href={lab.labWebsite}
+              href={lab.profile_url}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1.5 mt-3 text-[12px] text-zinc-700 hover:text-blue-400 transition-colors duration-100"
             >
               <ExternalLink size={11} />
-              {displayHost(lab.labWebsite)}
+              {displayHost(lab.profile_url)}
             </a>
           )}
         </div>
 
         <div className="flex flex-col items-end gap-2 shrink-0 pt-1">
-          <span
-            className={cn(
-              "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] border",
-              activityColors(lab.activityScore)
-            )}
-          >
-            <span
-              className={cn(
-                "size-[5px] rounded-full",
-                activityDot(lab.activityScore)
-              )}
-            />
-            {activityLabel(lab.activityScore)}
-            <span className="opacity-50">·</span>
-            <span className="tabular-nums">{lab.activityScore}</span>
-          </span>
-
           {isUndergradFriendly && (
             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] border border-blue-500/20 text-blue-400 bg-blue-500/5">
               <GraduationCap size={11} />
               Undergrad Friendly
             </span>
           )}
-
-          <p className="text-[11px] text-zinc-600">
-            {lab.labName}
-          </p>
         </div>
       </div>
 
@@ -293,7 +231,7 @@ export default async function LabPage({ params }: { params: Params }) {
       {/* ── Research Summary ─────────────────────────────────────── */}
       <Section label="Research Overview" delay={80}>
         <p className="text-[14px] text-zinc-400 leading-[1.85] max-w-prose">
-          {lab.researchSummary}
+          {lab.research_summary}
         </p>
       </Section>
 
@@ -306,61 +244,61 @@ export default async function LabPage({ params }: { params: Params }) {
             <div className="flex items-center gap-3 mb-5">
               <PubSparkline years={pubYears} />
               <span className="text-[10px] text-zinc-700">
-                {pubs.length} paper{pubs.length !== 1 ? "s" : ""} · {Math.min(...pubYears)}–{Math.max(...pubYears)}
+                {pubs.length} paper{pubs.length !== 1 ? "s" : ""}
+                {pubYears.length > 0 && (
+                  <> · {Math.min(...pubYears)}–{Math.max(...pubYears)}</>
+                )}
               </span>
             </div>
 
             <div>
-              {pubs.map((pub, i) => (
-                <div
-                  key={pub.id}
-                  className={cn(
-                    "flex flex-col gap-1.5 py-4",
-                    i > 0 && "border-t border-zinc-800/50"
-                  )}
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    {pub.url ? (
-                      <a
-                        href={pub.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-[13px] text-zinc-200 hover:text-blue-400 transition-colors duration-100 leading-snug"
-                      >
-                        {pub.title}
-                      </a>
-                    ) : (
-                      <p className="text-[13px] text-zinc-200 leading-snug">
-                        {pub.title}
+              {pubs.map((pub, i) => {
+                const pubUrl = pub.doi ? `https://doi.org/${pub.doi}` : null;
+                return (
+                  <div
+                    key={pub.id}
+                    className={cn(
+                      "flex flex-col gap-1.5 py-4",
+                      i > 0 && "border-t border-zinc-800/50"
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      {pubUrl ? (
+                        <a
+                          href={pubUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[13px] text-zinc-200 hover:text-blue-400 transition-colors duration-100 leading-snug"
+                        >
+                          {pub.title}
+                        </a>
+                      ) : (
+                        <p className="text-[13px] text-zinc-200 leading-snug">
+                          {pub.title}
+                        </p>
+                      )}
+                      <span className="text-[12px] text-zinc-700 tabular-nums shrink-0 mt-px">
+                        {pub.year}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3 flex-wrap">
+                      {pub.venue && (
+                        <p className="text-[11px] text-zinc-600">{pub.venue}</p>
+                      )}
+                      {pub.cited_by_count != null && pub.cited_by_count > 0 && (
+                        <span className="text-[10px] text-zinc-700 tabular-nums">
+                          {pub.cited_by_count.toLocaleString()} citations
+                        </span>
+                      )}
+                    </div>
+                    {pub.abstract && (
+                      <p className="text-[11px] text-zinc-600 leading-[1.6] line-clamp-2 mt-0.5">
+                        {pub.abstract}
                       </p>
                     )}
-                    <span className="text-[12px] text-zinc-700 tabular-nums shrink-0 mt-px">
-                      {pub.year}
-                    </span>
                   </div>
-                  <div className="flex items-center gap-3 flex-wrap">
-                    <p className="text-[11px] text-zinc-600">
-                      {pub.venue}
-                      {pub.authors && (
-                        <>
-                          <span className="text-zinc-800 mx-1.5">·</span>
-                          {pub.authors}
-                        </>
-                      )}
-                    </p>
-                    {pub.citations != null && pub.citations > 0 && (
-                      <span className="text-[10px] text-zinc-700 tabular-nums">
-                        {pub.citations.toLocaleString()} citations
-                      </span>
-                    )}
-                  </div>
-                  {pub.abstract && (
-                    <p className="text-[11px] text-zinc-600 leading-[1.6] line-clamp-2 mt-0.5">
-                      {pub.abstract}
-                    </p>
-                  )}
-                </div>
-              ))}
+                );
+              })}
             </div>
           </Section>
         </>
@@ -382,19 +320,23 @@ export default async function LabPage({ params }: { params: Params }) {
                 >
                   <div className="flex items-start justify-between gap-6">
                     <div className="flex items-baseline gap-2 min-w-0">
-                      {funderUrl(grant.funder) ? (
-                        <a
-                          href={funderUrl(grant.funder)!}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-[12px] text-zinc-300 font-medium shrink-0 hover:text-blue-400 transition-colors duration-100"
-                        >
-                          {grant.funder}
-                        </a>
-                      ) : (
-                        <span className="text-[12px] text-zinc-300 font-medium shrink-0">
-                          {grant.funder}
-                        </span>
+                      {grant.funder && (
+                        <>
+                          {funderUrl(grant.funder) ? (
+                            <a
+                              href={funderUrl(grant.funder)!}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[12px] text-zinc-300 font-medium shrink-0 hover:text-blue-400 transition-colors duration-100"
+                            >
+                              {grant.funder}
+                            </a>
+                          ) : (
+                            <span className="text-[12px] text-zinc-300 font-medium shrink-0">
+                              {grant.funder}
+                            </span>
+                          )}
+                        </>
                       )}
                       {grant.amount && (
                         <>
@@ -405,10 +347,9 @@ export default async function LabPage({ params }: { params: Params }) {
                         </>
                       )}
                     </div>
-                    {(grant.startDate || grant.endDate) && (
+                    {grant.year && (
                       <span className="text-[11px] text-zinc-700 tabular-nums shrink-0">
-                        {grant.startDate?.slice(0, 4)}
-                        {grant.endDate && `–${grant.endDate.slice(0, 4)}`}
+                        {grant.year}
                       </span>
                     )}
                   </div>
@@ -416,25 +357,6 @@ export default async function LabPage({ params }: { params: Params }) {
                     {grant.title}
                   </p>
                 </div>
-              ))}
-            </div>
-          </Section>
-        </>
-      )}
-
-      {skills.length > 0 && (
-        <>
-          <Rule />
-          {/* ── Skills ───────────────────────────────────────────── */}
-          <Section label="Skills & Tools" delay={280}>
-            <div className="flex flex-wrap gap-2">
-              {skills.map((skill) => (
-                <span
-                  key={skill}
-                  className="inline-flex items-center px-2.5 py-1 rounded-[3px] text-[12px] text-blue-400 bg-slate-800 leading-none"
-                >
-                  {skill}
-                </span>
               ))}
             </div>
           </Section>
@@ -450,9 +372,9 @@ export default async function LabPage({ params }: { params: Params }) {
       >
         <EmailSheet
           labId={lab.id}
-          piName={lab.piName}
+          piName={lab.name}
           piEmail={lab.email}
-          labName={lab.labName}
+          labName={lab.department ?? ""}
           hasPubs={hasPubs}
         />
         <SaveButton labId={lab.id} />
@@ -475,7 +397,7 @@ export default async function LabPage({ params }: { params: Params }) {
             <SectionHeader label="Similar Labs" />
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {similarLabs.map((sl) => (
-                <SimilarLabCard key={sl.id} lab={sl} />
+                <SimilarLabCard key={sl.id} researcher={sl} />
               ))}
             </div>
           </section>

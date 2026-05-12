@@ -1,7 +1,7 @@
 import { count, desc, isNotNull } from "drizzle-orm";
 import Link from "next/link";
 import { db } from "@/lib/db";
-import { grants, labs, publications } from "@/lib/db/schema";
+import { grants, researchers, publications } from "@/lib/db/schema";
 import { LabCard } from "@/components/lab-card";
 import { SearchForm } from "@/components/search-form";
 import { CountUp } from "@/components/count-up";
@@ -15,13 +15,11 @@ const TRENDING = [
   { label: "Drug Discovery", q: "drug discovery" },
 ] as const;
 
-export default function HomePage() {
-  // Stats from real DB
-  const labCount = db.select({ v: count() }).from(labs).all()[0]?.v ?? 0;
-  const actualPubCount = db.select({ v: count() }).from(publications).all()[0]?.v ?? 0;
-  const actualGrantCount = db.select({ v: count() }).from(grants).all()[0]?.v ?? 0;
+export default async function HomePage() {
+  const labCount = (await db.select({ v: count() }).from(researchers))[0]?.v ?? 0;
+  const actualPubCount = (await db.select({ v: count() }).from(publications))[0]?.v ?? 0;
+  const actualGrantCount = (await db.select({ v: count() }).from(grants))[0]?.v ?? 0;
 
-  // Use the detailed seed profile as baseline so totals scale with indexed professors.
   const estimatedPubCount = Math.round(labCount * 2.8);
   const estimatedGrantCount = Math.round(labCount * 1.4);
   const pubCount = Math.max(actualPubCount, estimatedPubCount);
@@ -33,15 +31,14 @@ export default function HomePage() {
     { value: grantCount, label: "Active grants" },
   ];
 
-  // Recently active labs: those with publications (Tier 1), sorted by activity
-  const activeLabs = db
-    .select({ lab: labs })
-    .from(labs)
-    .where(isNotNull(labs.labWebsite))
-    .orderBy(desc(labs.activityScore))
-    .limit(8)
-    .all()
-    .map((r) => r.lab);
+  const activeLabs = (
+    await db
+      .select({ researcher: researchers })
+      .from(researchers)
+      .where(isNotNull(researchers.profile_url))
+      .orderBy(desc(researchers.last_updated_at))
+      .limit(8)
+  ).map((r) => r.researcher);
 
   return (
     <div className="flex flex-col min-h-full">
@@ -160,9 +157,9 @@ export default function HomePage() {
           className="flex gap-3 px-4 sm:px-8 overflow-x-auto pb-2"
           style={{ scrollbarWidth: "none" }}
         >
-          {activeLabs.map((lab) => (
-            <div key={lab.id} className="w-[280px] sm:w-[300px] shrink-0">
-              <LabCard lab={lab} />
+          {activeLabs.map((researcher) => (
+            <div key={researcher.id} className="w-[280px] sm:w-[300px] shrink-0">
+              <LabCard researcher={researcher} />
             </div>
           ))}
           {/* Fade-out right edge */}
