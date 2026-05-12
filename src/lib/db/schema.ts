@@ -1,69 +1,118 @@
-import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import {
+  index,
+  integer,
+  pgSchema,
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+  vector,
+} from "drizzle-orm/pg-core";
 
-export const labs = sqliteTable("labs", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  piName: text("pi_name").notNull(),
-  piTitle: text("pi_title").notNull(),
-  department: text("department").notNull(),
-  college: text("college").notNull(),
-  labName: text("lab_name").notNull(),
-  researchSummary: text("research_summary").notNull(),
-  labWebsite: text("lab_website"),
-  email: text("email"),
-  skills: text("skills").notNull().default("[]"), // JSON string[]
-  activityScore: integer("activity_score").notNull().default(0),
-  createdAt: integer("created_at", { mode: "timestamp" })
-    .notNull()
-    .$defaultFn(() => new Date()),
-  updatedAt: integer("updated_at", { mode: "timestamp" })
-    .notNull()
-    .$defaultFn(() => new Date()),
+// ── Supabase auth schema reference ────────────────────────────────────────────
+
+const authSchema = pgSchema("auth");
+
+const authUsers = authSchema.table("users", {
+  id: uuid("id").primaryKey(),
 });
 
-export const publications = sqliteTable("publications", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  labId: integer("lab_id")
-    .notNull()
-    .references(() => labs.id, { onDelete: "cascade" }),
+// ── Core tables ───────────────────────────────────────────────────────────────
+
+export const researchers = pgTable(
+  "researchers",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    openalex_id: text("openalex_id").unique().notNull(),
+    name: text("name").notNull(),
+    title: text("title"),
+    department: text("department"),
+    email: text("email"),
+    profile_url: text("profile_url"),
+    research_summary: text("research_summary"),
+    embedding: vector("embedding", { dimensions: 1024 }),
+    last_updated_at: timestamp("last_updated_at").defaultNow(),
+    created_at: timestamp("created_at").defaultNow(),
+  },
+  (t) => [
+    index("researchers_embedding_idx")
+      .using("ivfflat", t.embedding.op("vector_cosine_ops"))
+      .with({ lists: 50 }),
+  ]
+);
+
+export const publications = pgTable("publications", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  researcher_id: uuid("researcher_id").references(() => researchers.id, {
+    onDelete: "cascade",
+  }),
+  openalex_id: text("openalex_id").unique(),
   title: text("title").notNull(),
-  authors: text("authors").notNull(), // comma-separated
-  year: integer("year").notNull(),
-  venue: text("venue").notNull(),
-  url: text("url"),
   abstract: text("abstract"),
-  citations: integer("citations"),
+  venue: text("venue"),
+  year: integer("year"),
+  doi: text("doi"),
+  cited_by_count: integer("cited_by_count").default(0),
+  created_at: timestamp("created_at").defaultNow(),
 });
 
-export const grants = sqliteTable("grants", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  labId: integer("lab_id")
-    .notNull()
-    .references(() => labs.id, { onDelete: "cascade" }),
+export const grants = pgTable("grants", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  researcher_id: uuid("researcher_id").references(() => researchers.id, {
+    onDelete: "cascade",
+  }),
   title: text("title").notNull(),
-  funder: text("funder").notNull(),
-  amount: integer("amount"), // in USD
-  startDate: text("start_date"), // ISO date string
-  endDate: text("end_date"),
+  funder: text("funder"),
+  amount: text("amount"),
+  year: integer("year"),
+  created_at: timestamp("created_at").defaultNow(),
 });
 
-// status: saved | sent | responded | no_response | meeting
-export const trackerEntries = sqliteTable("tracker_entries", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  visitorId: text("visitor_id").notNull(), // anonymous UUID from localStorage
-  labId: integer("lab_id")
-    .notNull()
-    .references(() => labs.id, { onDelete: "cascade" }),
+export const user_profiles = pgTable("user_profiles", {
+  id: uuid("id")
+    .primaryKey()
+    .references(() => authUsers.id, { onDelete: "cascade" }),
+  major: text("major"),
+  year: text("year"),
+  skills: text("skills"),
+  interests: text("interests"),
+  updated_at: timestamp("updated_at").defaultNow(),
+});
+
+export const tracker_entries = pgTable("tracker_entries", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  user_id: uuid("user_id").references(() => authUsers.id, {
+    onDelete: "cascade",
+  }),
+  researcher_id: uuid("researcher_id").references(() => researchers.id, {
+    onDelete: "cascade",
+  }),
   status: text("status").notNull().default("saved"),
-  dateSent: text("date_sent"), // ISO date string
-  lastUpdated: integer("last_updated", { mode: "timestamp" })
-    .notNull()
-    .$defaultFn(() => new Date()),
   notes: text("notes"),
+  created_at: timestamp("created_at").defaultNow(),
+  updated_at: timestamp("updated_at").defaultNow(),
 });
 
-export type Lab = typeof labs.$inferSelect;
-export type NewLab = typeof labs.$inferInsert;
+export const email_generations = pgTable("email_generations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  user_id: uuid("user_id").references(() => authUsers.id, {
+    onDelete: "cascade",
+  }),
+  researcher_id: uuid("researcher_id").references(() => researchers.id, {
+    onDelete: "cascade",
+  }),
+  generated_at: timestamp("generated_at").defaultNow(),
+});
+
+// ── Inferred types ────────────────────────────────────────────────────────────
+
+export type Researcher = typeof researchers.$inferSelect;
+export type NewResearcher = typeof researchers.$inferInsert;
 export type Publication = typeof publications.$inferSelect;
+export type NewPublication = typeof publications.$inferInsert;
 export type Grant = typeof grants.$inferSelect;
-export type TrackerEntry = typeof trackerEntries.$inferSelect;
+export type NewGrant = typeof grants.$inferInsert;
+export type UserProfile = typeof user_profiles.$inferSelect;
+export type TrackerEntry = typeof tracker_entries.$inferSelect;
 export type TrackerStatus = "saved" | "sent" | "responded" | "no_response" | "meeting";
+export type EmailGeneration = typeof email_generations.$inferSelect;

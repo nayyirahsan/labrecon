@@ -5,11 +5,10 @@ import { useRouter } from "next/navigation";
 import { Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-type LabResult = {
-  id: number;
-  piName: string;
-  labName: string;
-  department: string;
+type ResearcherResult = {
+  id: string;
+  name: string;
+  department: string | null;
 };
 
 type Props = { labCount: number };
@@ -17,7 +16,7 @@ type Props = { labCount: number };
 export function CommandPalette({ labCount }: Props) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<LabResult[]>([]);
+  const [results, setResults] = useState<ResearcherResult[]>([]);
   const [selected, setSelected] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -60,12 +59,12 @@ export function CommandPalette({ labCount }: Props) {
     timerRef.current = setTimeout(() => {
       const controller = new AbortController();
       controllerRef.current = controller;
-      fetch(`/api/labs-search?q=${encodeURIComponent(query)}&limit=6`, {
+      fetch(`/api/search?q=${encodeURIComponent(query)}&limit=6`, {
         signal: controller.signal,
       })
         .then((r) => r.json())
-        .then((d: { labs?: LabResult[] }) => {
-          setResults(d.labs ?? []);
+        .then((d: { results?: ResearcherResult[] }) => {
+          setResults(d.results ?? []);
           setSelected(0);
         })
         .catch(() => {});
@@ -78,7 +77,7 @@ export function CommandPalette({ labCount }: Props) {
   }, [query]);
 
   const navigate = useCallback(
-    (id: number) => {
+    (id: string) => {
       setOpen(false);
       router.push(`/labs/${id}`);
     },
@@ -148,10 +147,10 @@ export function CommandPalette({ labCount }: Props) {
           {/* Results */}
           {results.length > 0 && (
             <div className="py-1">
-              {results.map((lab, i) => (
+              {results.map((r, i) => (
                 <button
-                  key={lab.id}
-                  onClick={() => navigate(lab.id)}
+                  key={r.id}
+                  onClick={() => navigate(r.id)}
                   className={cn(
                     "w-full flex flex-col items-start px-4 py-2.5 text-left",
                     "transition-colors duration-75",
@@ -164,13 +163,13 @@ export function CommandPalette({ labCount }: Props) {
                     className="text-[13px] leading-snug"
                     style={{ fontFamily: "var(--font-display)" }}
                   >
-                    {lab.piName}
+                    {r.name}
                   </span>
-                  <span className="text-[11px] text-zinc-600 mt-0.5">
-                    {lab.labName}
-                    <span className="text-zinc-800 mx-1.5">·</span>
-                    {lab.department.replace("Department of ", "").replace("School of ", "")}
-                  </span>
+                  {r.department && (
+                    <span className="text-[11px] text-zinc-600 mt-0.5">
+                      {r.department}
+                    </span>
+                  )}
                 </button>
               ))}
             </div>

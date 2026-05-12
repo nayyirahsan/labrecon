@@ -3,34 +3,48 @@
 import { useEffect, useState } from "react";
 import { Bookmark, BookmarkCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { createBrowserClient } from "@/lib/supabase/client";
+import { useAuth } from "@/components/auth-provider";
 
-const SAVED_KEY = "labrecon:saved";
-
-function getSaved(): Set<number> {
-  try {
-    return new Set(
-      JSON.parse(localStorage.getItem(SAVED_KEY) ?? "[]") as number[]
-    );
-  } catch {
-    return new Set();
-  }
-}
-
-export function SaveButton({ labId }: { labId: number }) {
+export function SaveButton({ labId }: { labId: string }) {
+  const { user } = useAuth();
   const [saved, setSaved] = useState(false);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    setMounted(true);
-    setSaved(getSaved().has(labId));
-  }, [labId]);
+    if (!user) {
+      setMounted(true);
+      return;
+    }
+    const supabase = createBrowserClient();
+    supabase
+      .from("tracker_entries")
+      .select("id")
+      .eq("researcher_id", labId)
+      .eq("user_id", user.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        setSaved(!!data);
+        setMounted(true);
+      });
+  }, [labId, user]);
 
-  function toggle() {
-    const ids = getSaved();
-    if (ids.has(labId)) ids.delete(labId);
-    else ids.add(labId);
-    localStorage.setItem(SAVED_KEY, JSON.stringify([...ids]));
-    setSaved(ids.has(labId));
+  async function toggle() {
+    if (!user) return;
+    const supabase = createBrowserClient();
+    if (saved) {
+      await supabase
+        .from("tracker_entries")
+        .delete()
+        .eq("researcher_id", labId)
+        .eq("user_id", user.id);
+      setSaved(false);
+    } else {
+      await supabase
+        .from("tracker_entries")
+        .insert({ researcher_id: labId, user_id: user.id, status: "saved" });
+      setSaved(true);
+    }
   }
 
   return (

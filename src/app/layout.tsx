@@ -2,12 +2,13 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Instrument_Serif } from "next/font/google";
 import { count } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { labs } from "@/lib/db/schema";
+import { researchers } from "@/lib/db/schema";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Sidebar } from "@/components/sidebar";
 import { MobileHeader } from "@/components/mobile-header";
 import { PageTransition } from "@/components/page-transition";
 import { CommandPalette } from "@/components/command-palette";
+import { AuthProvider } from "@/components/auth-provider";
 import "./globals.css";
 
 const geist = Geist({
@@ -33,12 +34,13 @@ export const viewport: Viewport = {
   themeColor: "#17171f",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const labCount = db.select({ v: count() }).from(labs).all()[0]?.v ?? 0;
+  const rows = await db.select({ v: count() }).from(researchers);
+  const labCount = rows[0]?.v ?? 0;
 
   return (
     <html
@@ -53,17 +55,19 @@ export default function RootLayout({
         >
           Skip to content
         </a>
-        <TooltipProvider>
-          {/* Global Cmd+K command palette */}
-          <CommandPalette labCount={labCount} />
-          {/* Mobile top bar — only visible below md breakpoint */}
-          <MobileHeader />
-          {/* Desktop sidebar — hidden on mobile */}
-          <Sidebar />
-          <main id="main-content" className="flex-1 overflow-y-auto">
-            <PageTransition>{children}</PageTransition>
-          </main>
-        </TooltipProvider>
+        <AuthProvider>
+          <TooltipProvider>
+            {/* Global Cmd+K command palette */}
+            <CommandPalette labCount={labCount} />
+            {/* Mobile top bar — only visible below md breakpoint */}
+            <MobileHeader />
+            {/* Desktop sidebar — hidden on mobile */}
+            <Sidebar />
+            <main id="main-content" className="flex-1 overflow-y-auto">
+              <PageTransition>{children}</PageTransition>
+            </main>
+          </TooltipProvider>
+        </AuthProvider>
       </body>
     </html>
   );

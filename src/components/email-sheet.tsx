@@ -31,14 +31,12 @@ type Tone = "professional" | "conversational";
 
 type RefPub = {
   title: string;
-  year: number;
-  venue: string;
+  doi: string | null;
 } | null;
 
 const YEAR_OPTIONS = ["Freshman", "Sophomore", "Junior", "Senior", "Grad Student"];
-const PROFILE_KEY = "labrecon:profile";
 
-// Pre-filled with demo profile
+// Pre-filled fallback — used when not signed in or profile not yet saved
 const DEFAULT_PROFILE: StudentProfile = {
   name: "Nayyir",
   major: "Electrical and Computer Engineering",
@@ -47,27 +45,6 @@ const DEFAULT_PROFILE: StudentProfile = {
   interests:
     "Interested in applying machine learning to real-world sensing and data collection problems",
 };
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function loadProfile(): StudentProfile {
-  try {
-    const raw = localStorage.getItem(PROFILE_KEY);
-    if (!raw) return DEFAULT_PROFILE;
-    const stored = { ...DEFAULT_PROFILE, ...JSON.parse(raw) } as StudentProfile;
-    return {
-      ...stored,
-      major: "Electrical and Computer Engineering",
-      year: "Freshman",
-    };
-  } catch {
-    return DEFAULT_PROFILE;
-  }
-}
-
-function saveProfile(p: StudentProfile) {
-  localStorage.setItem(PROFILE_KEY, JSON.stringify(p));
-}
 
 function parseSubject(draft: string): string {
   const m = draft.match(/^Subject:\s*(.+)/im);
@@ -122,7 +99,7 @@ const selectCls = cn(inputCls, "appearance-none cursor-pointer");
 // ── Main component ────────────────────────────────────────────────────────────
 
 type Props = {
-  labId: number;
+  labId: string;
   piName: string;
   piEmail: string | null;
   labName: string;
@@ -139,18 +116,40 @@ export function EmailSheet({
   const [open, setOpen] = useState(false);
   const [profile, setProfile] = useState<StudentProfile>(DEFAULT_PROFILE);
   const [tone, setTone] = useState<Tone>("professional");
-  const [status, setStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
+  const [status, setStatus] = useState<"idle" | "loading" | "done" | "error" | "limit">("idle");
   const [draft, setDraft] = useState("");
   const [refPub, setRefPub] = useState<RefPub>(null);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
+  const [generationsRemaining, setGenerationsRemaining] = useState<number | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Hydrate profile from localStorage on open
+  // Hydrate profile and daily count on open
   useEffect(() => {
     if (open) {
-      setProfile(loadProfile());
-      if (status === "error") {
+      fetch("/api/user/profile")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (data) {
+            setProfile((prev) => ({
+              ...prev,
+              major: data.major ?? prev.major,
+              year: data.year ?? prev.year,
+              skills: data.skills ?? prev.skills,
+              interests: data.interests ?? prev.interests,
+            }));
+          }
+        })
+        .catch(() => {});
+
+      fetch("/api/generate-email")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (data != null) setGenerationsRemaining(data.generations_remaining);
+        })
+        .catch(() => {});
+
+      if (status === "error" || status === "limit") {
         setStatus("idle");
         setError("");
       }
@@ -163,11 +162,28 @@ export function EmailSheet({
   }
 
   const canGenerate =
-    profile.name.trim().length > 0 && profile.major.trim().length > 0;
+    profile.name.trim().length > 0 &&
+    profile.major.trim().length > 0 &&
+    generationsRemaining !== 0;
 
   async function handleGenerate() {
     if (!canGenerate) return;
-    saveProfile(profile);
+    // Persist profile changes before generating so the route reads updated values
+    try {
+      await fetch("/api/user/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          major: profile.major,
+          year: profile.year,
+          skills: profile.skills,
+          interests: profile.interests,
+        }),
+      });
+    } catch {
+      // non-fatal — proceed anyway
+    }
+
     setStatus("loading");
     setError("");
 
@@ -175,10 +191,16 @@ export function EmailSheet({
       const res = await fetch("/api/generate-email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ labId, student: profile, tone }),
+        body: JSON.stringify({ researcher_id: labId, name: profile.name, tone }),
       });
 
       const data = await res.json();
+
+      if (res.status === 429) {
+        setGenerationsRemaining(0);
+        setStatus("limit");
+        return;
+      }
 
       if (!res.ok) {
         setError(data.error ?? "Something went wrong.");
@@ -186,8 +208,13 @@ export function EmailSheet({
         return;
       }
 
-      setDraft(data.draft);
-      setRefPub(data.referencedPub);
+      setDraft(data.email);
+      setRefPub(
+        data.referenced_paper_title
+          ? { title: data.referenced_paper_title, doi: data.referenced_doi }
+          : null
+      );
+      setGenerationsRemaining(data.generations_remaining);
       setStatus("done");
 
       setTimeout(() => textareaRef.current?.focus(), 50);
@@ -252,9 +279,21 @@ export function EmailSheet({
       >
         {/* Header */}
         <SheetHeader className="px-6 py-4 border-b border-zinc-800/60 shrink-0">
-          <SheetTitle className="text-[14px] font-medium text-zinc-200">
-            Outreach Email
-          </SheetTitle>
+          <div className="flex items-center justify-between">
+            <SheetTitle className="text-[14px] font-medium text-zinc-200">
+              Outreach Email
+            </SheetTitle>
+            {generationsRemaining !== null && (
+              <span
+                className={cn(
+                  "text-[11px] tabular-nums",
+                  generationsRemaining === 0 ? "text-amber-500" : "text-zinc-600"
+                )}
+              >
+                {generationsRemaining} of 5 remaining today
+              </span>
+            )}
+          </div>
           <p className="text-[11px] text-zinc-600 -mt-0.5">
             for{" "}
             <span className="text-zinc-500">
@@ -382,12 +421,12 @@ export function EmailSheet({
             {/* Generate button */}
             <button
               onClick={handleGenerate}
-              disabled={!canGenerate || status === "loading"}
+              disabled={!canGenerate || status === "loading" || status === "limit"}
               className={cn(
                 "mt-5 w-full flex items-center justify-center gap-2",
                 "h-9 rounded-[4px] text-[13px] font-medium",
                 "transition-[background-color,color] duration-100",
-                canGenerate && status !== "loading"
+                canGenerate && status !== "loading" && status !== "limit"
                   ? "bg-blue-600 hover:bg-blue-500 text-white"
                   : "bg-zinc-800 text-zinc-600 cursor-not-allowed"
               )}
@@ -414,10 +453,15 @@ export function EmailSheet({
                 : ""}
             </p>
 
-            {/* Error */}
+            {/* Error / limit */}
             {status === "error" && (
               <p role="alert" className="mt-3 text-[12px] text-red-400 text-center">
                 {error}
+              </p>
+            )}
+            {status === "limit" && (
+              <p role="alert" className="mt-3 text-[12px] text-amber-400 text-center">
+                You&rsquo;ve reached today&rsquo;s limit — resets tomorrow
               </p>
             )}
           </div>
@@ -453,18 +497,20 @@ export function EmailSheet({
                   spellCheck={false}
                 />
 
-                {/* Referenced publication */}
+                {/* Citation badge */}
                 {refPub && (
-                  <div className="flex items-start gap-2 pt-1">
-                    <span className="text-[10px] uppercase tracking-[0.1em] text-zinc-700 shrink-0 mt-px">
-                      Referenced
+                  <div className="flex flex-col gap-1 pt-1 px-3 py-2.5 rounded-[3px] bg-zinc-900 border border-zinc-800">
+                    <span className="text-[10px] uppercase tracking-[0.1em] text-zinc-700">
+                      Referenced paper
                     </span>
-                    <p className="text-[11px] text-zinc-600 leading-snug line-clamp-2">
-                      {refPub.title}{" "}
-                      <span className="text-zinc-800">
-                        ({refPub.year}, {refPub.venue})
-                      </span>
+                    <p className="text-[11px] text-zinc-400 leading-snug line-clamp-2">
+                      {refPub.title}
                     </p>
+                    {refPub.doi && (
+                      <span className="text-[10px] font-mono text-zinc-600 select-all">
+                        {refPub.doi}
+                      </span>
+                    )}
                   </div>
                 )}
 

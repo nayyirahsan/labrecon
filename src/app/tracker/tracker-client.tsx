@@ -11,12 +11,14 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { createBrowserClient } from "@/lib/supabase/client";
+import { useAuth } from "@/components/auth-provider";
 import type { TrackerStatus } from "@/lib/db/schema";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type LabInfo = {
-  id: number;
+  id: string;
   piName: string;
   department: string;
   college: string;
@@ -24,85 +26,11 @@ type LabInfo = {
 };
 
 type LocalEntry = {
-  labId: number;
+  labId: string;
   status: TrackerStatus;
-  lastUpdated: string; // ISO
+  lastUpdated: string;
   dateSent: string | null;
 };
-
-// ── Storage ───────────────────────────────────────────────────────────────────
-
-const TRACKER_KEY = "labrecon:tracker";
-const SAVED_KEY = "labrecon:saved";
-const DEMO_SEEDED_KEY = "labrecon:demo-seeded";
-
-function readEntries(validIds: Set<number>): LocalEntry[] {
-  try {
-    const tracker: LocalEntry[] = JSON.parse(
-      localStorage.getItem(TRACKER_KEY) ?? "[]"
-    );
-    const trackedIds = new Set(tracker.map((e) => e.labId));
-
-    const legacyIds: number[] = JSON.parse(
-      localStorage.getItem(SAVED_KEY) ?? "[]"
-    );
-    for (const id of legacyIds) {
-      if (!trackedIds.has(id) && validIds.has(id)) {
-        tracker.push({
-          labId: id,
-          status: "saved",
-          lastUpdated: new Date().toISOString(),
-          dateSent: null,
-        });
-        trackedIds.add(id);
-      }
-    }
-
-    return tracker.filter((e) => validIds.has(e.labId));
-  } catch {
-    return [];
-  }
-}
-
-function persistEntries(entries: LocalEntry[]) {
-  localStorage.setItem(TRACKER_KEY, JSON.stringify(entries));
-  localStorage.setItem(
-    SAVED_KEY,
-    JSON.stringify(entries.map((e) => e.labId))
-  );
-}
-
-// Demo data seeder — injects 8 entries with realistic statuses for demo
-function seedDemoData(validIds: Set<number>): LocalEntry[] {
-  const today = new Date("2026-04-13T10:00:00Z");
-  const daysAgo = (n: number) => new Date(today.getTime() - n * 86400000).toISOString();
-
-  // Use first 8 valid lab IDs (Tier 1 labs come first in DB)
-  const availableIds = [...validIds].slice(0, 8);
-  if (availableIds.length < 8) return [];
-
-  const [id1, id2, id3, id4, id5, id6, id7, id8] = availableIds;
-
-  const entries: LocalEntry[] = [
-    // 2 Saved
-    { labId: id1, status: "saved", lastUpdated: daysAgo(3), dateSent: null },
-    { labId: id2, status: "saved", lastUpdated: daysAgo(1), dateSent: null },
-    // 3 Sent (within last 2 weeks)
-    { labId: id3, status: "sent", lastUpdated: daysAgo(12), dateSent: daysAgo(12) },
-    { labId: id4, status: "sent", lastUpdated: daysAgo(8), dateSent: daysAgo(8) },
-    { labId: id5, status: "sent", lastUpdated: daysAgo(5), dateSent: daysAgo(5) },
-    // 1 Responded (3 days ago)
-    { labId: id6, status: "responded", lastUpdated: daysAgo(3), dateSent: daysAgo(11) },
-    // 1 No Response (20 days ago — triggers follow-up banner)
-    { labId: id7, status: "no_response", lastUpdated: daysAgo(20), dateSent: daysAgo(20) },
-    // 1 Meeting
-    { labId: id8, status: "meeting", lastUpdated: daysAgo(1), dateSent: daysAgo(14) },
-  ];
-
-  persistEntries(entries);
-  localStorage.setItem(DEMO_SEEDED_KEY, "1");
-  return entries;
-}
 
 // ── Status config ─────────────────────────────────────────────────────────────
 
@@ -180,7 +108,7 @@ function FollowUpBanner({ piName, daysSinceContact }: { piName: string; daysSinc
     <div className="flex items-center gap-3 px-4 py-3 mx-4 sm:mx-8 mb-4 rounded-[4px] bg-amber-500/5 border border-amber-500/15">
       <AlertCircle size={14} className="text-amber-500 shrink-0" aria-hidden="true" />
       <p className="text-[12px] text-amber-400/90">
-        <span className="font-medium">Dr. {piName.split(" ").pop()}</span> hasn't responded in {daysSinceContact} days — consider following up.
+        <span className="font-medium">Dr. {piName.split(" ").pop()}</span> hasn&apos;t responded in {daysSinceContact} days — consider following up.
       </p>
     </div>
   );
@@ -216,63 +144,107 @@ function EmptyState() {
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
-type Props = { allLabs: LabInfo[] };
-
-export function TrackerClient({ allLabs }: Props) {
+export function TrackerClient() {
+  const { user } = useAuth();
   const [entries, setEntries] = useState<LocalEntry[]>([]);
+  const [labMap, setLabMap] = useState(new Map<string, LabInfo>());
   const [mounted, setMounted] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
-
-  const labMap = new Map(allLabs.map((l) => [l.id, l]));
-  const validIds = new Set(allLabs.map((l) => l.id));
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   useEffect(() => {
-    const alreadySeeded = localStorage.getItem(DEMO_SEEDED_KEY) === "1";
-    const existing = readEntries(validIds);
-
-    if (!alreadySeeded && existing.length === 0) {
-      // First visit with no data — inject demo entries
-      setEntries(seedDemoData(validIds));
-    } else {
-      setEntries(existing);
+    if (!user) {
+      setMounted(true);
+      return;
     }
-    setMounted(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+
+    const supabase = createBrowserClient();
+    supabase
+      .from("tracker_entries")
+      .select("id, researcher_id, status, updated_at, created_at, researchers(id, name, department)")
+      .eq("user_id", user.id)
+      .then(({ data }) => {
+        if (!data) {
+          setMounted(true);
+          return;
+        }
+
+        const newLabMap = new Map<string, LabInfo>();
+        const newEntries: LocalEntry[] = [];
+
+        for (const row of data) {
+          const researcherRaw = row.researchers;
+        const researcher = (Array.isArray(researcherRaw) ? researcherRaw[0] : researcherRaw) as {
+          id: string;
+          name: string;
+          department: string | null;
+        } | null;
+          if (!researcher) continue;
+
+          newLabMap.set(row.researcher_id, {
+            id: row.researcher_id,
+            piName: researcher.name,
+            department: researcher.department ?? "",
+            college: "",
+            labName: "",
+          });
+
+          newEntries.push({
+            labId: row.researcher_id,
+            status: (row.status as TrackerStatus) ?? "saved",
+            lastUpdated: row.updated_at ?? new Date().toISOString(),
+            dateSent: row.created_at ?? null,
+          });
+        }
+
+        setLabMap(newLabMap);
+        setEntries(newEntries);
+        setMounted(true);
+      });
+  }, [user]);
 
   const updateStatus = useCallback(
-    (labId: number, status: TrackerStatus) => {
-      setEntries((prev) => {
-        const next = prev.map((e) =>
+    async (labId: string, status: TrackerStatus) => {
+      if (!user) return;
+      const now = new Date().toISOString();
+      setEntries((prev) =>
+        prev.map((e) =>
           e.labId === labId
             ? {
                 ...e,
                 status,
-                lastUpdated: new Date().toISOString(),
+                lastUpdated: now,
                 dateSent:
-                  status === "sent" && !e.dateSent
-                    ? new Date().toISOString()
-                    : e.dateSent,
+                  status === "sent" && !e.dateSent ? now : e.dateSent,
               }
             : e
-        );
-        persistEntries(next);
-        return next;
-      });
+        )
+      );
+      const supabase = createBrowserClient();
+      await supabase
+        .from("tracker_entries")
+        .update({ status, updated_at: now })
+        .eq("researcher_id", labId)
+        .eq("user_id", user.id);
     },
-    []
+    [user]
   );
 
-  const removeEntry = useCallback((labId: number) => {
-    setEntries((prev) => {
-      const next = prev.filter((e) => e.labId !== labId);
-      persistEntries(next);
-      return next;
-    });
-    setConfirmDelete(null);
-  }, []);
+  const removeEntry = useCallback(
+    async (labId: string) => {
+      if (!user) return;
+      setEntries((prev) => prev.filter((e) => e.labId !== labId));
+      setConfirmDelete(null);
+      const supabase = createBrowserClient();
+      await supabase
+        .from("tracker_entries")
+        .delete()
+        .eq("researcher_id", labId)
+        .eq("user_id", user.id);
+    },
+    [user]
+  );
 
-  function handleDeleteClick(labId: number) {
+  function handleDeleteClick(labId: string) {
     if (confirmDelete === labId) {
       removeEntry(labId);
     } else {
@@ -301,8 +273,8 @@ export function TrackerClient({ allLabs }: Props) {
       new Date(b.lastUpdated).getTime() - new Date(a.lastUpdated).getTime()
   );
 
-  // Find entries that need a follow-up (no_response + >14 days since contact)
-  const today = new Date("2026-04-13T10:00:00Z");
+  // Follow-up: no_response + >14 days since contact
+  const today = new Date();
   const followUpEntry = rows.find((e) => {
     if (e.status !== "no_response") return false;
     const dateSent = e.dateSent ?? e.lastUpdated;
@@ -414,9 +386,11 @@ export function TrackerClient({ allLabs }: Props) {
                         >
                           {lab.piName}
                         </p>
-                        <p className="text-[11px] text-zinc-600 truncate mt-0.5">
-                          {lab.labName}
-                        </p>
+                        {lab.labName && (
+                          <p className="text-[11px] text-zinc-600 truncate mt-0.5">
+                            {lab.labName}
+                          </p>
+                        )}
                       </Link>
                     </td>
 

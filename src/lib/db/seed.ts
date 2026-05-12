@@ -1,73 +1,11 @@
-import Database from "better-sqlite3";
-import { drizzle } from "drizzle-orm/better-sqlite3";
-import { grants, labs, publications } from "./schema";
+import postgres from "postgres";
+import { drizzle } from "drizzle-orm/postgres-js";
+import { grants, publications, researchers } from "./schema";
 
-const sqlite = new Database("./data/labrecon.db");
-sqlite.pragma("journal_mode = WAL");
-sqlite.pragma("foreign_keys = OFF"); // off during seed
+const client = postgres(process.env.DATABASE_URL!);
+const db = drizzle(client);
 
-const db = drizzle(sqlite);
-
-// ── Schema bootstrap (drop + recreate for clean slate) ────────────────────────
-
-sqlite.exec(`
-  DROP TABLE IF EXISTS tracker_entries;
-  DROP TABLE IF EXISTS grants;
-  DROP TABLE IF EXISTS publications;
-  DROP TABLE IF EXISTS labs;
-
-  CREATE TABLE labs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    pi_name TEXT NOT NULL,
-    pi_title TEXT NOT NULL,
-    department TEXT NOT NULL,
-    college TEXT NOT NULL,
-    lab_name TEXT NOT NULL,
-    research_summary TEXT NOT NULL,
-    lab_website TEXT,
-    email TEXT,
-    skills TEXT NOT NULL DEFAULT '[]',
-    activity_score INTEGER NOT NULL DEFAULT 0,
-    created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
-  );
-
-  CREATE TABLE publications (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    lab_id INTEGER NOT NULL REFERENCES labs(id) ON DELETE CASCADE,
-    title TEXT NOT NULL,
-    authors TEXT NOT NULL,
-    year INTEGER NOT NULL,
-    venue TEXT NOT NULL,
-    url TEXT,
-    abstract TEXT,
-    citations INTEGER
-  );
-
-  CREATE TABLE grants (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    lab_id INTEGER NOT NULL REFERENCES labs(id) ON DELETE CASCADE,
-    title TEXT NOT NULL,
-    funder TEXT NOT NULL,
-    amount INTEGER,
-    start_date TEXT,
-    end_date TEXT
-  );
-
-  CREATE TABLE tracker_entries (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    visitor_id TEXT NOT NULL,
-    lab_id INTEGER NOT NULL REFERENCES labs(id) ON DELETE CASCADE,
-    status TEXT NOT NULL DEFAULT 'saved',
-    date_sent TEXT,
-    last_updated INTEGER NOT NULL,
-    notes TEXT
-  );
-`);
-
-sqlite.pragma("foreign_keys = ON");
-
-// ── Types ─────────────────────────────────────────────────────────────────────
+// ── Types ──────────────────────────────────────────────────────────────────────
 
 type LabSeed = {
   piName: string;
@@ -694,67 +632,38 @@ const tier1Pubs: PubSeed[] = [
 // ── Tier 1 grants ──────────────────────────────────────────────────────────────
 
 const tier1Grants: GrantSeed[] = [
-  // Atlas Wang — VITA Group
   { piName: "Atlas Wang", title: "Efficient Foundation Models for Edge and Mobile Deployment", funder: "NSF", amount: 750000, startDate: "2023-09-01", endDate: "2026-08-31" },
   { piName: "Atlas Wang", title: "Hardware-Software Co-Design for Neural Network Compression", funder: "DARPA", amount: 1400000, startDate: "2024-01-01", endDate: "2027-12-31" },
-
-  // Jessy Li — Computational Language and Discourse Lab
   { piName: "Jessy Li", title: "CAREER: Discourse Coherence for Trustworthy Language Model Generation", funder: "NSF", amount: 600000, startDate: "2022-07-01", endDate: "2027-06-30" },
   { piName: "Jessy Li", title: "Scientific Claim Verification for Biomedical Literature at Scale", funder: "NIH (R01)", amount: 890000, startDate: "2023-09-01", endDate: "2027-08-31" },
-
-  // Scott Niekum — PeARL
   { piName: "Scott Niekum", title: "Safe and Efficient Robot Learning from Human Demonstrations", funder: "NSF", amount: 820000, startDate: "2022-10-01", endDate: "2026-09-30" },
   { piName: "Scott Niekum", title: "Conformal Risk Control for Real-World Robot Deployment", funder: "DARPA", amount: 1650000, startDate: "2024-02-01", endDate: "2027-01-31" },
-
-  // David Soloveichik — Soloveichik Lab
   { piName: "David Soloveichik", title: "Programming Molecular Computation with DNA Reaction Networks", funder: "NSF", amount: 710000, startDate: "2022-08-01", endDate: "2026-07-31" },
   { piName: "David Soloveichik", title: "DNA-Based Biosensors for Point-of-Care Pathogen Detection", funder: "NIH (R01)", amount: 1250000, startDate: "2023-04-01", endDate: "2027-03-31" },
-
-  // Keshav Pingali — ISSL
   { piName: "Keshav Pingali", title: "Scalable Graph Analytics Systems for Irregular Parallel Workloads", funder: "NSF", amount: 1100000, startDate: "2021-10-01", endDate: "2025-09-30" },
   { piName: "Keshav Pingali", title: "High-Performance Graph Neural Network Training on Distributed Systems", funder: "DOE Office of Science", amount: 1800000, startDate: "2023-01-01", endDate: "2026-12-31" },
-
-  // Chen Yu — Computational Cognition and Learning Lab
   { piName: "Chen Yu", title: "Social Interaction and Language Learning in Early Childhood", funder: "NIH (R01)", amount: 1450000, startDate: "2022-09-01", endDate: "2027-08-31" },
   { piName: "Chen Yu", title: "Computational Models of Infant Visual Experience and Word Learning", funder: "NSF", amount: 680000, startDate: "2023-08-01", endDate: "2026-07-31" },
-
-  // Andrew Ellington — Ellington Lab
   { piName: "Andrew Ellington", title: "Machine Learning-Accelerated In Vitro Selection of Therapeutic Aptamers", funder: "NIH (R01)", amount: 2100000, startDate: "2022-06-01", endDate: "2027-05-31" },
   { piName: "Andrew Ellington", title: "Synthetic Genetic Alphabets for Expanded Biosensor Chemistry", funder: "DARPA", amount: 2800000, startDate: "2023-03-01", endDate: "2027-02-28" },
-
-  // Huilin Li — Li Lab Structural Biology
   { piName: "Huilin Li", title: "Cryo-EM Structures of Eukaryotic DNA Replication Machinery", funder: "NIH (R01)", amount: 1750000, startDate: "2022-09-01", endDate: "2027-08-31" },
   { piName: "Huilin Li", title: "Structural Basis of Replication Fork Protection and Restart", funder: "NIH (R01)", amount: 1400000, startDate: "2023-07-01", endDate: "2027-06-30" },
-
-  // Kristen Harris — Harris Lab Synaptic Neuroscience
   { piName: "Kristen Harris", title: "Ultrastructural Correlates of Long-Term Potentiation in Hippocampal Neuropil", funder: "NIH (R01)", amount: 1650000, startDate: "2021-09-01", endDate: "2026-08-31" },
   { piName: "Kristen Harris", title: "Connectomic Analysis of Synaptic Plasticity During Memory Formation", funder: "NSF", amount: 920000, startDate: "2023-10-01", endDate: "2027-09-30" },
-
-  // Tim Keitt — Keitt Lab Landscape Ecology
   { piName: "Tim Keitt", title: "Graph-Theoretic Models of Landscape Connectivity Under Climate Change", funder: "NSF", amount: 780000, startDate: "2022-08-01", endDate: "2026-07-31" },
   { piName: "Tim Keitt", title: "Continental-Scale Biodiversity Monitoring with Citizen Science Data", funder: "NSF", amount: 1100000, startDate: "2023-09-01", endDate: "2027-08-31" },
-
-  // Allan MacDonald — MacDonald Group Condensed Matter Theory
   { piName: "Allan MacDonald", title: "Correlated Electron States in Moiré Superlattices", funder: "DOE Office of Science", amount: 2400000, startDate: "2022-10-01", endDate: "2026-09-30" },
   { piName: "Allan MacDonald", title: "Topological Phases and Fractional Quantum Hall Physics in TMD Bilayers", funder: "Simons Foundation", amount: 1200000, startDate: "2023-01-01", endDate: "2027-12-31" },
-
-  // Katherine Freese — Freese Cosmology Group
   { piName: "Katherine Freese", title: "Dark Matter Direct Detection: Annual Modulation and Background Discrimination", funder: "DOE Office of Science", amount: 1350000, startDate: "2022-09-01", endDate: "2026-08-31" },
   { piName: "Katherine Freese", title: "Primordial Dark Stars and Early Universe Observations with JWST", funder: "NSF", amount: 640000, startDate: "2023-06-01", endDate: "2026-05-31" },
-
-  // Sean Roberts — Roberts Research Group
   { piName: "Sean Roberts", title: "Singlet Fission Photovoltaics: From Molecular Design to Device Integration", funder: "DOE Office of Science", amount: 1550000, startDate: "2022-10-01", endDate: "2026-09-30" },
   { piName: "Sean Roberts", title: "CAREER: Coherent Energy Transfer in Strongly Coupled Molecular Systems", funder: "NSF", amount: 590000, startDate: "2021-07-01", endDate: "2026-06-30" },
-
-  // Simon Humphrey — Humphrey Lab
   { piName: "Simon Humphrey", title: "High-Throughput Discovery of Metal-Organic Frameworks for CO₂ Capture", funder: "DOE Office of Science", amount: 1400000, startDate: "2023-01-01", endDate: "2027-12-31" },
   { piName: "Simon Humphrey", title: "CAREER: Microwave Synthesis of Porous Materials for Clean Energy Applications", funder: "NSF", amount: 620000, startDate: "2022-06-01", endDate: "2027-05-31" },
-
-  // John Goodenough — Goodenough Research Group (Emeritus)
   { piName: "John Goodenough", title: "All-Solid-State Lithium Batteries with Glass Electrolytes", funder: "DOE Office of Science", amount: 1800000, startDate: "2020-10-01", endDate: "2025-09-30" },
 ];
 
-// ── TIER 2: 2,800 skeleton labs ───────────────────────────────────────────────
+// ── TIER 2: 2,800 skeleton researchers ────────────────────────────────────────
 
 const FIRST_NAMES = [
   "James","Mary","John","Patricia","Robert","Jennifer","Michael","Linda","William","Barbara",
@@ -777,9 +686,6 @@ const LAST_NAMES = [
   "Nakamura","Tanaka","Watanabe","Ito","Yamamoto","Suzuki","Petrov","Smirnov","Okonkwo","Adeyemi",
 ];
 
-const TITLES = ["Professor","Associate Professor","Assistant Professor","Research Professor","Professor"];
-// Weighted: Professor ~40%, Associate ~30%, Assistant ~20%, Research ~10%
-
 function pickTitle(index: number): string {
   const v = index % 10;
   if (v < 4) return "Professor";
@@ -788,474 +694,197 @@ function pickTitle(index: number): string {
   return "Research Professor";
 }
 
-function pickScore(index: number): number {
-  // Distribute: 20% very active (75-92), 25% active (60-74), 30% moderate (40-59), 25% stale (20-39)
-  const v = (index * 7919 + 31337) % 100;
-  if (v < 20) return 75 + (index % 18);
-  if (v < 45) return 60 + (index % 15);
-  if (v < 75) return 40 + (index % 20);
-  return 20 + (index % 20);
-}
-
 type DeptDef = {
   department: string;
   college: string;
   count: number;
   areas: string[];
-  skills: string[];
   summaryTemplate: string;
 };
 
 const TIER2_DEPTS: DeptDef[] = [
-  // ── College of Natural Sciences ────────────────────────────────────────────
-  { department: "Department of Mathematics", college: "College of Natural Sciences", count: 45,
-    areas: ["algebraic topology","number theory","partial differential equations","stochastic processes","mathematical physics","combinatorics","geometric analysis","dynamical systems"],
-    skills: ["MATLAB","Python","Mathematica","Julia","LaTeX","R","Sage"],
-    summaryTemplate: "Research focuses on [area] with applications in theoretical and applied mathematics." },
-  { department: "Department of Statistics and Data Science", college: "College of Natural Sciences", count: 40,
-    areas: ["Bayesian inference","causal inference","high-dimensional statistics","survival analysis","spatial statistics","nonparametric methods","time series analysis"],
-    skills: ["R","Python","Stan","Julia","SQL","TensorFlow","JAGS"],
-    summaryTemplate: "Work develops [area] methodology with applications to large-scale scientific and industry datasets." },
-  { department: "Department of Chemistry", college: "College of Natural Sciences", count: 50,
-    areas: ["synthetic organic chemistry","materials electrochemistry","spectroscopy","catalysis","structural biology","chemical biology","atmospheric chemistry","polymer chemistry"],
-    skills: ["NMR Spectroscopy","HPLC","Mass Spectrometry","Python","ChemDraw","DFT Calculations","MATLAB"],
-    summaryTemplate: "Laboratory investigates [area] using advanced spectroscopic and synthetic methods." },
-  { department: "Department of Astronomy", college: "College of Natural Sciences", count: 25,
-    areas: ["exoplanet detection","galaxy formation","gravitational waves","stellar evolution","cosmological simulations","interstellar medium","dark matter"],
-    skills: ["Python","IRAF","MATLAB","C++","Astropy","Fortran","IDL"],
-    summaryTemplate: "Research investigates [area] using observations from ground and space-based telescopes." },
-  { department: "Department of Marine Science", college: "College of Natural Sciences", count: 20,
-    areas: ["ocean biogeochemistry","coral reef ecology","physical oceanography","marine microbiology","climate feedbacks","benthic ecology"],
-    skills: ["R","Python","MATLAB","GIS","Oceanographic Instrumentation","Metagenomics","CTD Profiling"],
-    summaryTemplate: "Field and laboratory research on [area] in marine and coastal environments." },
-  { department: "Department of Human Ecology", college: "College of Natural Sciences", count: 30,
-    areas: ["nutritional biochemistry","textile innovation","consumer behavior","child development","sustainable design","family systems"],
-    skills: ["R","SPSS","Python","Survey Methods","MATLAB","Qualitative Analysis","HPLC"],
-    summaryTemplate: "Interdisciplinary work on [area] connecting human biology and environmental contexts." },
-  { department: "Department of Kinesiology and Health Education", college: "College of Natural Sciences", count: 30,
-    areas: ["exercise physiology","biomechanics","motor learning","sports psychology","physical activity epidemiology","rehabilitation science"],
-    skills: ["MATLAB","R","Python","EMG Analysis","Motion Capture","SPSS","LabVIEW"],
-    summaryTemplate: "Research examines [area] to optimize human movement and health outcomes." },
-  { department: "Department of Nutritional Sciences", college: "College of Natural Sciences", count: 25,
-    areas: ["dietary patterns and chronic disease","microbiome nutrition","pediatric nutrition","metabolic syndrome","nutrigenomics","food security"],
-    skills: ["R","SPSS","SAS","Python","Metabolomics","FFQ Analysis","Clinical Trials"],
-    summaryTemplate: "Translational research on [area] linking dietary exposures to health trajectories." },
-  { department: "Department of Radiological Sciences", college: "College of Natural Sciences", count: 25,
-    areas: ["medical imaging","radiation dosimetry","PET/CT imaging","MRI physics","image reconstruction","radiation therapy optimization"],
-    skills: ["MATLAB","Python","LabVIEW","C++","ImageJ","Monte Carlo Simulation","DICOM Processing"],
-    summaryTemplate: "Research advances [area] techniques with applications to diagnostic and therapeutic radiology." },
-  { department: "Department of Cell and Molecular Biology", college: "College of Natural Sciences", count: 35,
-    areas: ["gene regulation","chromatin biology","RNA splicing","signal transduction","cell cycle control","protein homeostasis","epigenetics"],
-    skills: ["PCR","Western Blot","ChIP-seq","Flow Cytometry","Confocal Microscopy","Python","R"],
-    summaryTemplate: "Fundamental research on [area] using biochemical, genetic, and genomic approaches." },
-  { department: "Department of Integrative Biology", college: "College of Natural Sciences", count: 75,
-    areas: ["evolutionary genomics","population genetics","comparative physiology","behavioral ecology","paleontology","herpetology","ichthyology","ornithology"],
-    skills: ["R","Python","Bioinformatics","BEAST","Phylogenetics","Field Sampling","Genomic Sequencing"],
-    summaryTemplate: "Integrative research on [area] spanning molecular to organismal levels." },
-
-  // ── Cockrell School of Engineering ─────────────────────────────────────────
-  { department: "Department of Electrical and Computer Engineering", college: "Cockrell School of Engineering", count: 90,
-    areas: ["power systems","wireless communications","semiconductor devices","signal processing","photonics","VLSI design","control systems","embedded systems","machine learning hardware"],
-    skills: ["MATLAB","Python","C","Verilog","SPICE","LabVIEW","FPGA","C++"],
-    summaryTemplate: "Research advances [area] with applications to next-generation electronic and computing systems." },
-  { department: "Department of Mechanical Engineering", college: "Cockrell School of Engineering", count: 80,
-    areas: ["computational fluid dynamics","thermal management","additive manufacturing","robotics","dynamical systems","energy harvesting","turbomachinery","micro-electromechanical systems"],
-    skills: ["MATLAB","ANSYS","Python","SolidWorks","C++","LabVIEW","Abaqus","OpenFOAM"],
-    summaryTemplate: "Experimental and computational research on [area] for engineering applications." },
-  { department: "Department of Chemical Engineering", college: "Cockrell School of Engineering", count: 65,
-    areas: ["process intensification","polymers and soft matter","catalytic reaction engineering","energy storage materials","bioprocessing","transport phenomena","microfluidics"],
-    skills: ["Python","MATLAB","Aspen Plus","COMSOL","R","C++","GAMS"],
-    summaryTemplate: "Research applies chemical engineering principles to [area] at scales from molecular to industrial." },
-  { department: "Department of Civil Engineering", college: "Cockrell School of Engineering", count: 70,
-    areas: ["structural health monitoring","sustainable infrastructure","water resources","geotechnical engineering","transportation systems","urban resilience","earthquake engineering"],
-    skills: ["MATLAB","Python","SAP2000","ArcGIS","R","ANSYS","AutoCAD"],
-    summaryTemplate: "Engineering research on [area] for resilient and sustainable built environments." },
-  { department: "Department of Aerospace Engineering", college: "Cockrell School of Engineering", count: 55,
-    areas: ["hypersonic aerodynamics","space propulsion","orbital mechanics","unmanned aerial systems","structural mechanics","plasma dynamics","astrodynamics"],
-    skills: ["MATLAB","C++","Python","ANSYS","OpenFOAM","Fortran","CFD"],
-    summaryTemplate: "Theoretical and experimental research on [area] for aerospace vehicle design." },
-  { department: "Department of Materials Science and Engineering", college: "Cockrell School of Engineering", count: 45,
-    areas: ["battery materials","2D materials","thin film deposition","ceramics","biomaterials","corrosion","computational materials science","quantum materials"],
-    skills: ["Python","MATLAB","VASP","XRD Analysis","SEM/TEM","LabVIEW","Raman Spectroscopy"],
-    summaryTemplate: "Synthesis and characterization of novel [area] with applications to energy and electronics." },
-  { department: "Department of Petroleum and Geosystems Engineering", college: "Cockrell School of Engineering", count: 25,
-    areas: ["reservoir simulation","CO₂ sequestration","enhanced oil recovery","geomechanics","unconventional resources","wellbore integrity"],
-    skills: ["MATLAB","Python","Eclipse","CMG","COMSOL","R","Fortran"],
-    summaryTemplate: "Research on [area] to improve energy extraction and subsurface resource management." },
-  { department: "Department of Operations Research and Industrial Engineering", college: "Cockrell School of Engineering", count: 20,
-    areas: ["stochastic optimization","supply chain analytics","healthcare operations","network design","integer programming","simulation","machine learning for decisions"],
-    skills: ["Python","R","CPLEX","Gurobi","MATLAB","Julia","SQL"],
-    summaryTemplate: "Develops [area] models and algorithms for real-world decision-making systems." },
-
-  // ── College of Liberal Arts ─────────────────────────────────────────────────
-  { department: "Department of Psychology", college: "College of Liberal Arts", count: 70,
-    areas: ["clinical psychology","social cognition","developmental neuroscience","health psychology","cognitive aging","psychotherapy outcomes","affective science","personality"],
-    skills: ["R","SPSS","Python","E-Prime","PsychoPy","fMRI Analysis","MATLAB"],
-    summaryTemplate: "Research on [area] integrating behavioral experiments and cognitive neuroscience methods." },
-  { department: "Department of Sociology", college: "College of Liberal Arts", count: 45,
-    areas: ["racial inequality","urban sociology","organizational behavior","immigration and stratification","environmental justice","digital inequality","labor markets"],
-    skills: ["R","Stata","Python","NVivo","SPSS","Survey Methods","Qualitative Analysis"],
-    summaryTemplate: "Sociological research on [area] using quantitative, qualitative, and computational methods." },
-  { department: "Department of Government", college: "College of Liberal Arts", count: 45,
-    areas: ["comparative democratization","legislative behavior","public opinion","international security","political economy","judicial politics","election integrity"],
-    skills: ["R","Stata","Python","ArcGIS","SPSS","Survey Experiments","Web Scraping"],
-    summaryTemplate: "Political science research on [area] using observational and experimental designs." },
-  { department: "Department of Economics", college: "College of Liberal Arts", count: 60,
-    areas: ["labor economics","development economics","industrial organization","behavioral economics","econometrics","health economics","macroeconomics","environmental economics"],
-    skills: ["R","Stata","Python","MATLAB","SAS","Julia","SQL"],
-    summaryTemplate: "Empirical and theoretical research on [area] using micro- and macro-econometric methods." },
-  { department: "Department of Linguistics", college: "College of Liberal Arts", count: 35,
-    areas: ["syntax and semantics","computational linguistics","phonology","language acquisition","sociolinguistics","language typology","corpus linguistics"],
-    skills: ["Python","R","Praat","CLAN","ELAN","C++","Perl"],
-    summaryTemplate: "Linguistic research on [area] from formal and experimental perspectives." },
-  { department: "Department of History", college: "College of Liberal Arts", count: 35,
-    areas: ["Atlantic world","environmental history","science and technology","migration","colonial Latin America","gender history","digital humanities"],
-    skills: ["Python","R","ArcGIS","Gephi","NVivo","Palladio","Network Analysis"],
-    summaryTemplate: "Archival and digital research on [area] across historical periods and regions." },
-  { department: "Department of Philosophy", college: "College of Liberal Arts", count: 25,
-    areas: ["philosophy of mind","epistemology","ethics and technology","formal logic","philosophy of science","political philosophy","metaphysics"],
-    skills: ["LaTeX","Python","Coq","Prolog","R","Mathematical Logic","Statistical Analysis"],
-    summaryTemplate: "Philosophical investigation of [area] combining analytic rigor with empirical engagement." },
-  { department: "Department of Anthropology", college: "College of Liberal Arts", count: 35,
-    areas: ["bioarchaeology","cultural evolution","medical anthropology","linguistic anthropology","digital anthropology","archaeological genomics"],
-    skills: ["R","Python","ArcGIS","SPSS","3D Scanning","Geometric Morphometrics","Qualitative Methods"],
-    summaryTemplate: "Anthropological research on [area] integrating biological and cultural perspectives." },
-
-  // ── McCombs School of Business ─────────────────────────────────────────────
-  { department: "Department of Finance", college: "McCombs School of Business", count: 55,
-    areas: ["asset pricing","corporate finance","market microstructure","fintech","credit risk","climate finance","private equity"],
-    skills: ["R","Python","Stata","MATLAB","SQL","Compustat","Bloomberg API"],
-    summaryTemplate: "Empirical research on [area] using large financial datasets and econometric methods." },
-  { department: "Department of Management", college: "McCombs School of Business", count: 45,
-    areas: ["organizational behavior","strategy","entrepreneurship","human resources","innovation management","leadership","organizational design"],
-    skills: ["R","Stata","Python","NVivo","SPSS","Survey Methods","Qualitative Analysis"],
-    summaryTemplate: "Research on [area] at the intersection of management theory and organizational practice." },
-  { department: "Department of Marketing", college: "McCombs School of Business", count: 45,
-    areas: ["consumer behavior","digital marketing","pricing strategy","brand management","social media analytics","marketing analytics","healthcare marketing"],
-    skills: ["R","Python","Stata","SQL","SPSS","NLP","A/B Testing"],
-    summaryTemplate: "Behavioral and quantitative research on [area] in consumer and digital markets." },
-  { department: "Department of Information Risk and Operations Management", college: "McCombs School of Business", count: 55,
-    areas: ["cybersecurity economics","supply chain optimization","healthcare analytics","platform economics","AI governance","data privacy","operations research"],
-    skills: ["Python","R","SQL","MATLAB","Java","Gurobi","Machine Learning"],
-    summaryTemplate: "Research on [area] at the intersection of technology, operations, and management." },
-
-  // ── LBJ School of Public Affairs ──────────────────────────────────────────
-  { department: "LBJ School of Public Affairs", college: "LBJ School of Public Affairs", count: 60,
-    areas: ["health policy","education policy","environmental regulation","immigration policy","housing policy","energy policy","social welfare"],
-    skills: ["R","Stata","Python","ArcGIS","Survey Methods","Policy Analysis","Qualitative Methods"],
-    summaryTemplate: "Policy research on [area] informing federal, state, and local government decisions." },
-  { department: "School of Urban Design", college: "LBJ School of Public Affairs", count: 40,
-    areas: ["urban mobility","affordable housing","transit-oriented development","green infrastructure","community engagement","land use policy"],
-    skills: ["ArcGIS","Python","AutoCAD","R","SketchUp","Agent-Based Modeling","Statistical Analysis"],
-    summaryTemplate: "Applied research on [area] to improve equity and sustainability in urban systems." },
-
-  // ── College of Education ────────────────────────────────────────────────────
-  { department: "Department of Curriculum and Instruction", college: "College of Education", count: 40,
-    areas: ["STEM education","literacy development","culturally responsive pedagogy","educational technology","teacher professional development","bilingual education"],
-    skills: ["R","NVivo","SPSS","Python","Qualitative Analysis","Survey Methods","Mixed Methods"],
-    summaryTemplate: "Research on [area] to improve teaching and learning across K-12 and higher education." },
-  { department: "Department of Educational Psychology", college: "College of Education", count: 35,
-    areas: ["learning disabilities","academic motivation","assessment and measurement","cognitive development","student well-being","gifted education"],
-    skills: ["R","SPSS","Python","Mplus","AMOS","E-Prime","Qualitative Analysis"],
-    summaryTemplate: "Psychological and educational research on [area] using experimental and survey designs." },
-  { department: "Department of Special Education", college: "College of Education", count: 25,
-    areas: ["autism spectrum disorder","assistive technology","inclusive classrooms","behavior analysis","early childhood intervention","learning disabilities"],
-    skills: ["R","SPSS","NVivo","SAS","Applied Behavior Analysis","Mixed Methods","Survey Methods"],
-    summaryTemplate: "Research on [area] to advance educational outcomes for students with diverse learning needs." },
-
-  // ── College of Communication ────────────────────────────────────────────────
-  { department: "School of Journalism and Media", college: "College of Communication", count: 45,
-    areas: ["media and democracy","digital journalism","misinformation","international media","data journalism","health communication","media economics"],
-    skills: ["Python","R","NVivo","Tableau","SQL","Text Analysis","Survey Methods"],
-    summaryTemplate: "Research on [area] addressing journalism's role in democratic information ecosystems." },
-  { department: "Department of Advertising and Public Relations", college: "College of Communication", count: 40,
-    areas: ["digital advertising","social media influence","brand communication","health campaigns","strategic communication","consumer psychology"],
-    skills: ["R","SPSS","Python","Survey Methods","Experimental Design","Eye Tracking","Content Analysis"],
-    summaryTemplate: "Empirical research on [area] connecting message design to audience behavior." },
-  { department: "Department of Communication Studies", college: "College of Communication", count: 45,
-    areas: ["political communication","interpersonal communication","organizational communication","health and risk communication","intercultural communication","rhetoric"],
-    skills: ["R","SPSS","NVivo","Python","Survey Methods","Discourse Analysis","Qualitative Analysis"],
-    summaryTemplate: "Communication research on [area] integrating quantitative and qualitative traditions." },
-
-  // ── College of Fine Arts ────────────────────────────────────────────────────
-  { department: "Butler School of Music", college: "College of Fine Arts", count: 35,
-    areas: ["music cognition","computational musicology","music education","ethnomusicology","music technology","opera studies","jazz studies"],
-    skills: ["Python","R","MATLAB","SuperCollider","Max/MSP","Music21","Statistical Analysis"],
-    summaryTemplate: "Scholarly and creative research on [area] across musical traditions and technologies." },
-  { department: "Department of Theatre and Dance", college: "College of Fine Arts", count: 30,
-    areas: ["performance studies","theatre history","embodied cognition","choreography and technology","disability theatre","dance science","immersive performance"],
-    skills: ["Motion Capture","Python","R","Video Analysis","Qualitative Methods","Laban Movement Analysis"],
-    summaryTemplate: "Research and creative practice on [area] at the intersection of performance and scholarship." },
-  { department: "Department of Art and Art History", college: "College of Fine Arts", count: 25,
-    areas: ["digital humanities","museum studies","contemporary art criticism","photography history","Latin American art","indigenous visual culture"],
-    skills: ["Python","R","ArcGIS","QGIS","Network Analysis","Digital Archiving","Statistical Analysis"],
-    summaryTemplate: "Art historical and curatorial research on [area] with digital humanities methods." },
-
-  // ── School of Architecture ─────────────────────────────────────────────────
-  { department: "School of Architecture", college: "School of Architecture", count: 50,
-    areas: ["computational design","building performance simulation","sustainable architecture","historic preservation","housing design","urban morphology"],
-    skills: ["Grasshopper","Python","Rhino","Revit","EnergyPlus","GIS","AutoCAD"],
-    summaryTemplate: "Design research on [area] integrating computational tools and built environment analysis." },
-  { department: "Graduate Program in Urban Design", college: "School of Architecture", count: 30,
-    areas: ["smart cities","mobility and public space","urban resilience","informal settlements","green urban infrastructure","transit planning"],
-    skills: ["ArcGIS","Python","Rhino","Grasshopper","R","Agent-Based Modeling","AutoCAD"],
-    summaryTemplate: "Applied urban design research on [area] connecting spatial practice to policy outcomes." },
-
-  // ── School of Law ───────────────────────────────────────────────────────────
-  { department: "School of Law", college: "School of Law", count: 100,
-    areas: ["constitutional law","intellectual property","environmental law","criminal justice","corporate governance","technology regulation","immigration law","international trade"],
-    skills: ["Westlaw","Lexis Nexis","R","Python","Stata","Quantitative Legal Studies","Network Analysis"],
-    summaryTemplate: "Legal scholarship on [area] combining doctrinal analysis and empirical methods." },
-
-  // ── College of Pharmacy ─────────────────────────────────────────────────────
-  { department: "Division of Pharmacology and Toxicology", college: "College of Pharmacy", count: 65,
-    areas: ["drug metabolism","neuropharmacology","cancer pharmacology","cardiovascular drugs","computational drug design","toxicology","pharmacokinetics"],
-    skills: ["R","Python","MATLAB","HPLC","Mass Spectrometry","Western Blot","In Vitro Assays"],
-    summaryTemplate: "Pharmacological research on [area] advancing drug development and safety evaluation." },
-  { department: "Division of Chemical Biology and Medicinal Chemistry", college: "College of Pharmacy", count: 55,
-    areas: ["target identification","covalent inhibitors","PROTAC design","natural product synthesis","fragment screening","chemical probes","drug delivery"],
-    skills: ["NMR Spectroscopy","HPLC","ChemDraw","Python","Molecular Docking","Crystallography","Mass Spectrometry"],
-    summaryTemplate: "Medicinal chemistry research on [area] from target discovery to lead optimization." },
-
-  // ── School of Nursing ──────────────────────────────────────────────────────
-  { department: "School of Nursing", college: "School of Nursing", count: 90,
-    areas: ["palliative care","chronic disease self-management","community health nursing","mental health nursing","pediatric nursing","geriatric care","health disparities"],
-    skills: ["R","SPSS","SAS","NVivo","REDCap","Survey Methods","Clinical Trials"],
-    summaryTemplate: "Nursing research on [area] to improve patient outcomes and health equity." },
-
-  // ── School of Social Work ──────────────────────────────────────────────────
-  { department: "Steve Hicks School of Social Work", college: "Steve Hicks School of Social Work", count: 90,
-    areas: ["substance abuse treatment","child welfare","community organizing","trauma-informed care","mental health services","immigration and family","poverty intervention"],
-    skills: ["R","SPSS","NVivo","Stata","REDCap","Survey Methods","Mixed Methods"],
-    summaryTemplate: "Social work research on [area] to advance equity and well-being for vulnerable populations." },
-
-  // ── Jackson School of Geosciences ──────────────────────────────────────────
-  { department: "Department of Geological Sciences", college: "Jackson School of Geosciences", count: 60,
-    areas: ["geodynamics","paleoclimatology","volcanology","geochronology","sedimentary petrology","crustal deformation","seismology"],
-    skills: ["Python","MATLAB","ArcGIS","Theriak-Domino","Geochronology","Fortran","R"],
-    summaryTemplate: "Field and laboratory research on [area] using modern geochemical and geophysical methods." },
-  { department: "Department of Geography and the Environment", college: "Jackson School of Geosciences", count: 50,
-    areas: ["climate adaptation","remote sensing","biogeography","political ecology","urban heat islands","hydrological modeling","landscape ecology"],
-    skills: ["ArcGIS","R","Python","Google Earth Engine","QGIS","ENVI","Statistical Modeling"],
-    summaryTemplate: "Geographical research on [area] from local to global scales." },
-  { department: "Bureau of Economic Geology", college: "Jackson School of Geosciences", count: 40,
-    areas: ["carbon capture and storage","unconventional reservoir characterization","energy transition geoscience","groundwater resources","shale gas geomechanics"],
-    skills: ["Python","MATLAB","ArcGIS","Petrel","Eclipse","Fortran","Statistical Analysis"],
-    summaryTemplate: "Applied geoscience research on [area] informing energy and resource policy." },
-
-  // ── Dell Medical School ─────────────────────────────────────────────────────
-  { department: "Department of Internal Medicine", college: "Dell Medical School", count: 60,
-    areas: ["type 2 diabetes","cardiovascular risk reduction","infectious disease","pulmonary medicine","rheumatology","endocrinology","hepatology","nephrology"],
-    skills: ["R","SAS","SPSS","Python","REDCap","EHR Data Analysis","Clinical Trials","Biostatistics"],
-    summaryTemplate: "Translational and clinical research on [area] to improve patient care and health outcomes." },
-  { department: "Department of Surgery", college: "Dell Medical School", count: 50,
-    areas: ["surgical robotics","wound healing","transplant surgery","oncological surgery","laparoscopy","trauma surgery","vascular surgery"],
-    skills: ["R","Python","MATLAB","SAS","REDCap","Clinical Trials","EHR Analysis","Simulation"],
-    summaryTemplate: "Surgical research on [area] combining clinical practice with translational science." },
-  { department: "Department of Pediatrics", college: "Dell Medical School", count: 45,
-    areas: ["childhood obesity","neonatal intensive care","pediatric cancer","developmental disabilities","infectious disease in children","child mental health"],
-    skills: ["R","SAS","SPSS","REDCap","Python","Clinical Trials","EHR Analysis","Biostatistics"],
-    summaryTemplate: "Pediatric research on [area] to improve child health from birth through adolescence." },
-  { department: "Department of Psychiatry and Behavioral Sciences", college: "Dell Medical School", count: 45,
-    areas: ["depression and anxiety","PTSD treatment","schizophrenia","addiction medicine","psychedelic-assisted therapy","digital mental health","suicide prevention"],
-    skills: ["R","SPSS","SAS","Python","REDCap","fMRI Analysis","Clinical Trials","NLP"],
-    summaryTemplate: "Psychiatric research on [area] integrating clinical, neuroscientific, and community perspectives." },
-  { department: "Department of Neurology", college: "Dell Medical School", count: 45,
-    areas: ["Alzheimer's disease","Parkinson's disease","stroke recovery","multiple sclerosis","epilepsy","traumatic brain injury","neuroimmunology"],
-    skills: ["R","Python","MATLAB","SAS","REDCap","EEG Analysis","MRI Processing","Biostatistics"],
-    summaryTemplate: "Neurological research on [area] bridging basic neuroscience and clinical treatment." },
-  { department: "Department of Oncology", college: "Dell Medical School", count: 40,
-    areas: ["tumor microenvironment","immunotherapy","targeted therapy","cancer genomics","liquid biopsy","radiation oncology","cancer prevention"],
-    skills: ["R","Python","Bioinformatics","Flow Cytometry","scRNA-seq","SAS","Clinical Trials"],
-    summaryTemplate: "Cancer research on [area] from molecular mechanisms to clinical translation." },
-  { department: "Department of Cardiovascular Medicine", college: "Dell Medical School", count: 40,
-    areas: ["heart failure","atrial fibrillation","coronary artery disease","cardiac imaging","electrophysiology","preventive cardiology","cardiac rehabilitation"],
-    skills: ["R","SAS","Python","REDCap","EHR Analysis","Echocardiography","Clinical Trials","Biostatistics"],
-    summaryTemplate: "Cardiovascular research on [area] from basic mechanisms to clinical outcomes." },
-  { department: "Department of Orthopedics and Rehabilitation", college: "Dell Medical School", count: 25,
-    areas: ["musculoskeletal biomechanics","cartilage repair","sports medicine","prosthetics and orthotics","spine surgery","occupational therapy","bone biology"],
-    skills: ["MATLAB","R","Python","SAS","Motion Capture","Finite Element Analysis","REDCap"],
-    summaryTemplate: "Orthopedic and rehabilitation research on [area] to restore mobility and function." },
+  { department: "Department of Mathematics", college: "College of Natural Sciences", count: 45, areas: ["algebraic topology","number theory","partial differential equations","stochastic processes","mathematical physics","combinatorics","geometric analysis","dynamical systems"], summaryTemplate: "Research focuses on [area] with applications in theoretical and applied mathematics." },
+  { department: "Department of Statistics and Data Science", college: "College of Natural Sciences", count: 40, areas: ["Bayesian inference","causal inference","high-dimensional statistics","survival analysis","spatial statistics","nonparametric methods","time series analysis"], summaryTemplate: "Work develops [area] methodology with applications to large-scale scientific and industry datasets." },
+  { department: "Department of Chemistry", college: "College of Natural Sciences", count: 50, areas: ["synthetic organic chemistry","materials electrochemistry","spectroscopy","catalysis","structural biology","chemical biology","atmospheric chemistry","polymer chemistry"], summaryTemplate: "Laboratory investigates [area] using advanced spectroscopic and synthetic methods." },
+  { department: "Department of Astronomy", college: "College of Natural Sciences", count: 25, areas: ["exoplanet detection","galaxy formation","gravitational waves","stellar evolution","cosmological simulations","interstellar medium","dark matter"], summaryTemplate: "Research investigates [area] using observations from ground and space-based telescopes." },
+  { department: "Department of Marine Science", college: "College of Natural Sciences", count: 20, areas: ["ocean biogeochemistry","coral reef ecology","physical oceanography","marine microbiology","climate feedbacks","benthic ecology"], summaryTemplate: "Field and laboratory research on [area] in marine and coastal environments." },
+  { department: "Department of Human Ecology", college: "College of Natural Sciences", count: 30, areas: ["nutritional biochemistry","textile innovation","consumer behavior","child development","sustainable design","family systems"], summaryTemplate: "Interdisciplinary work on [area] connecting human biology and environmental contexts." },
+  { department: "Department of Kinesiology and Health Education", college: "College of Natural Sciences", count: 30, areas: ["exercise physiology","biomechanics","motor learning","sports psychology","physical activity epidemiology","rehabilitation science"], summaryTemplate: "Research examines [area] to optimize human movement and health outcomes." },
+  { department: "Department of Nutritional Sciences", college: "College of Natural Sciences", count: 25, areas: ["dietary patterns and chronic disease","microbiome nutrition","pediatric nutrition","metabolic syndrome","nutrigenomics","food security"], summaryTemplate: "Translational research on [area] linking dietary exposures to health trajectories." },
+  { department: "Department of Radiological Sciences", college: "College of Natural Sciences", count: 25, areas: ["medical imaging","radiation dosimetry","PET/CT imaging","MRI physics","image reconstruction","radiation therapy optimization"], summaryTemplate: "Research advances [area] techniques with applications to diagnostic and therapeutic radiology." },
+  { department: "Department of Cell and Molecular Biology", college: "College of Natural Sciences", count: 35, areas: ["gene regulation","chromatin biology","RNA splicing","signal transduction","cell cycle control","protein homeostasis","epigenetics"], summaryTemplate: "Fundamental research on [area] using biochemical, genetic, and genomic approaches." },
+  { department: "Department of Integrative Biology", college: "College of Natural Sciences", count: 75, areas: ["evolutionary genomics","population genetics","comparative physiology","behavioral ecology","paleontology","herpetology","ichthyology","ornithology"], summaryTemplate: "Integrative research on [area] spanning molecular to organismal levels." },
+  { department: "Department of Electrical and Computer Engineering", college: "Cockrell School of Engineering", count: 90, areas: ["power systems","wireless communications","semiconductor devices","signal processing","photonics","VLSI design","control systems","embedded systems","machine learning hardware"], summaryTemplate: "Research advances [area] with applications to next-generation electronic and computing systems." },
+  { department: "Department of Mechanical Engineering", college: "Cockrell School of Engineering", count: 80, areas: ["computational fluid dynamics","thermal management","additive manufacturing","robotics","dynamical systems","energy harvesting","turbomachinery","micro-electromechanical systems"], summaryTemplate: "Experimental and computational research on [area] for engineering applications." },
+  { department: "Department of Chemical Engineering", college: "Cockrell School of Engineering", count: 65, areas: ["process intensification","polymers and soft matter","catalytic reaction engineering","energy storage materials","bioprocessing","transport phenomena","microfluidics"], summaryTemplate: "Research applies chemical engineering principles to [area] at scales from molecular to industrial." },
+  { department: "Department of Civil Engineering", college: "Cockrell School of Engineering", count: 70, areas: ["structural health monitoring","sustainable infrastructure","water resources","geotechnical engineering","transportation systems","urban resilience","earthquake engineering"], summaryTemplate: "Engineering research on [area] for resilient and sustainable built environments." },
+  { department: "Department of Aerospace Engineering", college: "Cockrell School of Engineering", count: 55, areas: ["hypersonic aerodynamics","space propulsion","orbital mechanics","unmanned aerial systems","structural mechanics","plasma dynamics","astrodynamics"], summaryTemplate: "Theoretical and experimental research on [area] for aerospace vehicle design." },
+  { department: "Department of Materials Science and Engineering", college: "Cockrell School of Engineering", count: 45, areas: ["battery materials","2D materials","thin film deposition","ceramics","biomaterials","corrosion","computational materials science","quantum materials"], summaryTemplate: "Synthesis and characterization of novel [area] with applications to energy and electronics." },
+  { department: "Department of Petroleum and Geosystems Engineering", college: "Cockrell School of Engineering", count: 25, areas: ["reservoir simulation","CO₂ sequestration","enhanced oil recovery","geomechanics","unconventional resources","wellbore integrity"], summaryTemplate: "Research on [area] to improve energy extraction and subsurface resource management." },
+  { department: "Department of Operations Research and Industrial Engineering", college: "Cockrell School of Engineering", count: 20, areas: ["stochastic optimization","supply chain analytics","healthcare operations","network design","integer programming","simulation","machine learning for decisions"], summaryTemplate: "Develops [area] models and algorithms for real-world decision-making systems." },
+  { department: "Department of Psychology", college: "College of Liberal Arts", count: 70, areas: ["clinical psychology","social cognition","developmental neuroscience","health psychology","cognitive aging","psychotherapy outcomes","affective science","personality"], summaryTemplate: "Research on [area] integrating behavioral experiments and cognitive neuroscience methods." },
+  { department: "Department of Sociology", college: "College of Liberal Arts", count: 45, areas: ["racial inequality","urban sociology","organizational behavior","immigration and stratification","environmental justice","digital inequality","labor markets"], summaryTemplate: "Sociological research on [area] using quantitative, qualitative, and computational methods." },
+  { department: "Department of Government", college: "College of Liberal Arts", count: 45, areas: ["comparative democratization","legislative behavior","public opinion","international security","political economy","judicial politics","election integrity"], summaryTemplate: "Political science research on [area] using observational and experimental designs." },
+  { department: "Department of Economics", college: "College of Liberal Arts", count: 60, areas: ["labor economics","development economics","industrial organization","behavioral economics","econometrics","health economics","macroeconomics","environmental economics"], summaryTemplate: "Empirical and theoretical research on [area] using micro- and macro-econometric methods." },
+  { department: "Department of Linguistics", college: "College of Liberal Arts", count: 35, areas: ["syntax and semantics","computational linguistics","phonology","language acquisition","sociolinguistics","language typology","corpus linguistics"], summaryTemplate: "Linguistic research on [area] from formal and experimental perspectives." },
+  { department: "Department of History", college: "College of Liberal Arts", count: 35, areas: ["Atlantic world","environmental history","science and technology","migration","colonial Latin America","gender history","digital humanities"], summaryTemplate: "Archival and digital research on [area] across historical periods and regions." },
+  { department: "Department of Philosophy", college: "College of Liberal Arts", count: 25, areas: ["philosophy of mind","epistemology","ethics and technology","formal logic","philosophy of science","political philosophy","metaphysics"], summaryTemplate: "Philosophical investigation of [area] combining analytic rigor with empirical engagement." },
+  { department: "Department of Anthropology", college: "College of Liberal Arts", count: 35, areas: ["bioarchaeology","cultural evolution","medical anthropology","linguistic anthropology","digital anthropology","archaeological genomics"], summaryTemplate: "Anthropological research on [area] integrating biological and cultural perspectives." },
+  { department: "Department of Finance", college: "McCombs School of Business", count: 55, areas: ["asset pricing","corporate finance","market microstructure","fintech","credit risk","climate finance","private equity"], summaryTemplate: "Empirical research on [area] using large financial datasets and econometric methods." },
+  { department: "Department of Management", college: "McCombs School of Business", count: 45, areas: ["organizational behavior","strategy","entrepreneurship","human resources","innovation management","leadership","organizational design"], summaryTemplate: "Research on [area] at the intersection of management theory and organizational practice." },
+  { department: "Department of Marketing", college: "McCombs School of Business", count: 45, areas: ["consumer behavior","digital marketing","pricing strategy","brand management","social media analytics","marketing analytics","healthcare marketing"], summaryTemplate: "Behavioral and quantitative research on [area] in consumer and digital markets." },
+  { department: "Department of Information Risk and Operations Management", college: "McCombs School of Business", count: 55, areas: ["cybersecurity economics","supply chain optimization","healthcare analytics","platform economics","AI governance","data privacy","operations research"], summaryTemplate: "Research on [area] at the intersection of technology, operations, and management." },
+  { department: "LBJ School of Public Affairs", college: "LBJ School of Public Affairs", count: 60, areas: ["health policy","education policy","environmental regulation","immigration policy","housing policy","energy policy","social welfare"], summaryTemplate: "Policy research on [area] informing federal, state, and local government decisions." },
+  { department: "School of Urban Design", college: "LBJ School of Public Affairs", count: 40, areas: ["urban mobility","affordable housing","transit-oriented development","green infrastructure","community engagement","land use policy"], summaryTemplate: "Applied research on [area] to improve equity and sustainability in urban systems." },
+  { department: "Department of Curriculum and Instruction", college: "College of Education", count: 40, areas: ["STEM education","literacy development","culturally responsive pedagogy","educational technology","teacher professional development","bilingual education"], summaryTemplate: "Research on [area] to improve teaching and learning across K-12 and higher education." },
+  { department: "Department of Educational Psychology", college: "College of Education", count: 35, areas: ["learning disabilities","academic motivation","assessment and measurement","cognitive development","student well-being","gifted education"], summaryTemplate: "Psychological and educational research on [area] using experimental and survey designs." },
+  { department: "Department of Special Education", college: "College of Education", count: 25, areas: ["autism spectrum disorder","assistive technology","inclusive classrooms","behavior analysis","early childhood intervention","learning disabilities"], summaryTemplate: "Research on [area] to advance educational outcomes for students with diverse learning needs." },
+  { department: "School of Journalism and Media", college: "College of Communication", count: 45, areas: ["media and democracy","digital journalism","misinformation","international media","data journalism","health communication","media economics"], summaryTemplate: "Research on [area] addressing journalism's role in democratic information ecosystems." },
+  { department: "Department of Advertising and Public Relations", college: "College of Communication", count: 40, areas: ["digital advertising","social media influence","brand communication","health campaigns","strategic communication","consumer psychology"], summaryTemplate: "Empirical research on [area] connecting message design to audience behavior." },
+  { department: "Department of Communication Studies", college: "College of Communication", count: 45, areas: ["political communication","interpersonal communication","organizational communication","health and risk communication","intercultural communication","rhetoric"], summaryTemplate: "Communication research on [area] integrating quantitative and qualitative traditions." },
+  { department: "Butler School of Music", college: "College of Fine Arts", count: 35, areas: ["music cognition","computational musicology","music education","ethnomusicology","music technology","opera studies","jazz studies"], summaryTemplate: "Scholarly and creative research on [area] across musical traditions and technologies." },
+  { department: "Department of Theatre and Dance", college: "College of Fine Arts", count: 30, areas: ["performance studies","theatre history","embodied cognition","choreography and technology","disability theatre","dance science","immersive performance"], summaryTemplate: "Research and creative practice on [area] at the intersection of performance and scholarship." },
+  { department: "Department of Art and Art History", college: "College of Fine Arts", count: 25, areas: ["digital humanities","museum studies","contemporary art criticism","photography history","Latin American art","indigenous visual culture"], summaryTemplate: "Art historical and curatorial research on [area] with digital humanities methods." },
+  { department: "School of Architecture", college: "School of Architecture", count: 50, areas: ["computational design","building performance simulation","sustainable architecture","historic preservation","housing design","urban morphology"], summaryTemplate: "Design research on [area] integrating computational tools and built environment analysis." },
+  { department: "Graduate Program in Urban Design", college: "School of Architecture", count: 30, areas: ["smart cities","mobility and public space","urban resilience","informal settlements","green urban infrastructure","transit planning"], summaryTemplate: "Applied urban design research on [area] connecting spatial practice to policy outcomes." },
+  { department: "School of Law", college: "School of Law", count: 100, areas: ["constitutional law","intellectual property","environmental law","criminal justice","corporate governance","technology regulation","immigration law","international trade"], summaryTemplate: "Legal scholarship on [area] combining doctrinal analysis and empirical methods." },
+  { department: "Division of Pharmacology and Toxicology", college: "College of Pharmacy", count: 65, areas: ["drug metabolism","neuropharmacology","cancer pharmacology","cardiovascular drugs","computational drug design","toxicology","pharmacokinetics"], summaryTemplate: "Pharmacological research on [area] advancing drug development and safety evaluation." },
+  { department: "Division of Chemical Biology and Medicinal Chemistry", college: "College of Pharmacy", count: 55, areas: ["target identification","covalent inhibitors","PROTAC design","natural product synthesis","fragment screening","chemical probes","drug delivery"], summaryTemplate: "Medicinal chemistry research on [area] from target discovery to lead optimization." },
+  { department: "School of Nursing", college: "School of Nursing", count: 90, areas: ["palliative care","chronic disease self-management","community health nursing","mental health nursing","pediatric nursing","geriatric care","health disparities"], summaryTemplate: "Nursing research on [area] to improve patient outcomes and health equity." },
+  { department: "Steve Hicks School of Social Work", college: "Steve Hicks School of Social Work", count: 90, areas: ["substance abuse treatment","child welfare","community organizing","trauma-informed care","mental health services","immigration and family","poverty intervention"], summaryTemplate: "Social work research on [area] to advance equity and well-being for vulnerable populations." },
+  { department: "Department of Geological Sciences", college: "Jackson School of Geosciences", count: 60, areas: ["geodynamics","paleoclimatology","volcanology","geochronology","sedimentary petrology","crustal deformation","seismology"], summaryTemplate: "Field and laboratory research on [area] using modern geochemical and geophysical methods." },
+  { department: "Department of Geography and the Environment", college: "Jackson School of Geosciences", count: 50, areas: ["climate adaptation","remote sensing","biogeography","political ecology","urban heat islands","hydrological modeling","landscape ecology"], summaryTemplate: "Geographical research on [area] from local to global scales." },
+  { department: "Bureau of Economic Geology", college: "Jackson School of Geosciences", count: 40, areas: ["carbon capture and storage","unconventional reservoir characterization","energy transition geoscience","groundwater resources","shale gas geomechanics"], summaryTemplate: "Applied geoscience research on [area] informing energy and resource policy." },
+  { department: "Department of Internal Medicine", college: "Dell Medical School", count: 60, areas: ["type 2 diabetes","cardiovascular risk reduction","infectious disease","pulmonary medicine","rheumatology","endocrinology","hepatology","nephrology"], summaryTemplate: "Translational and clinical research on [area] to improve patient care and health outcomes." },
+  { department: "Department of Surgery", college: "Dell Medical School", count: 50, areas: ["surgical robotics","wound healing","transplant surgery","oncological surgery","laparoscopy","trauma surgery","vascular surgery"], summaryTemplate: "Surgical research on [area] combining clinical practice with translational science." },
+  { department: "Department of Pediatrics", college: "Dell Medical School", count: 45, areas: ["childhood obesity","neonatal intensive care","pediatric cancer","developmental disabilities","infectious disease in children","child mental health"], summaryTemplate: "Pediatric research on [area] to improve child health from birth through adolescence." },
+  { department: "Department of Psychiatry and Behavioral Sciences", college: "Dell Medical School", count: 45, areas: ["depression and anxiety","PTSD treatment","schizophrenia","addiction medicine","psychedelic-assisted therapy","digital mental health","suicide prevention"], summaryTemplate: "Psychiatric research on [area] integrating clinical, neuroscientific, and community perspectives." },
+  { department: "Department of Neurology", college: "Dell Medical School", count: 45, areas: ["Alzheimer's disease","Parkinson's disease","stroke recovery","multiple sclerosis","epilepsy","traumatic brain injury","neuroimmunology"], summaryTemplate: "Neurological research on [area] bridging basic neuroscience and clinical treatment." },
+  { department: "Department of Oncology", college: "Dell Medical School", count: 40, areas: ["tumor microenvironment","immunotherapy","targeted therapy","cancer genomics","liquid biopsy","radiation oncology","cancer prevention"], summaryTemplate: "Cancer research on [area] from molecular mechanisms to clinical translation." },
+  { department: "Department of Cardiovascular Medicine", college: "Dell Medical School", count: 40, areas: ["heart failure","atrial fibrillation","coronary artery disease","cardiac imaging","electrophysiology","preventive cardiology","cardiac rehabilitation"], summaryTemplate: "Cardiovascular research on [area] from basic mechanisms to clinical outcomes." },
+  { department: "Department of Orthopedics and Rehabilitation", college: "Dell Medical School", count: 25, areas: ["musculoskeletal biomechanics","cartilage repair","sports medicine","prosthetics and orthotics","spine surgery","occupational therapy","bone biology"], summaryTemplate: "Orthopedic and rehabilitation research on [area] to restore mobility and function." },
 ];
 
-// Validate total count
 const totalTier2 = TIER2_DEPTS.reduce((sum, d) => sum + d.count, 0);
-if (totalTier2 !== 2800) {
-  throw new Error(`Tier 2 count is ${totalTier2}, expected 2800`);
+if (totalTier2 !== 2800) throw new Error(`Tier 2 count is ${totalTier2}, expected 2800`);
+
+function toSlug(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, "_");
 }
 
-// ── Generate Tier 2 labs ──────────────────────────────────────────────────────
-
-type PartialLabSeed = {
+type Tier2Researcher = {
   piName: string;
   piTitle: string;
   department: string;
-  college: string;
-  labName: string;
   researchSummary: string;
-  skills: string[];
-  activityScore: number;
 };
 
-function generateTier2Labs(): PartialLabSeed[] {
-  const result: PartialLabSeed[] = [];
+function generateTier2(): Tier2Researcher[] {
+  const result: Tier2Researcher[] = [];
   const usedNames = new Set<string>(tier1Labs.map((l) => l.piName));
   let nameIndex = 0;
 
-  function nextName(): { first: string; last: string } {
+  function nextName(): string {
     while (true) {
       const first = FIRST_NAMES[nameIndex % FIRST_NAMES.length];
       const last = LAST_NAMES[Math.floor(nameIndex / FIRST_NAMES.length) % LAST_NAMES.length];
       nameIndex++;
       const full = `${first} ${last}`;
-      if (!usedNames.has(full)) {
-        usedNames.add(full);
-        return { first, last };
-      }
+      if (!usedNames.has(full)) { usedNames.add(full); return full; }
     }
   }
 
   let globalIndex = 0;
-  for (const deptDef of TIER2_DEPTS) {
-    for (let i = 0; i < deptDef.count; i++) {
-      const { first, last } = nextName();
-      const title = pickTitle(globalIndex);
-      const score = pickScore(globalIndex);
-
-      // Pick area and skills
-      const area = deptDef.areas[globalIndex % deptDef.areas.length];
-      const numSkills = 2 + (globalIndex % 2); // 2 or 3 skills
-      const skillStart = (globalIndex * 3) % deptDef.skills.length;
-      const skills: string[] = [];
-      for (let s = 0; s < numSkills; s++) {
-        skills.push(deptDef.skills[(skillStart + s) % deptDef.skills.length]);
-      }
-
-      // Lab name
-      const labNamePatterns = [
-        `${last} Lab`,
-        `${last} Research Group`,
-        `Laboratory for ${area.split(" ").slice(0, 2).join(" ")}`,
-        `${last} Group`,
-      ];
-      const labName = labNamePatterns[globalIndex % labNamePatterns.length];
-
-      // Research summary
-      const summary = deptDef.summaryTemplate.replace("[area]", area);
-
+  for (const dept of TIER2_DEPTS) {
+    for (let i = 0; i < dept.count; i++) {
+      const area = dept.areas[globalIndex % dept.areas.length];
       result.push({
-        piName: `${first} ${last}`,
-        piTitle: title,
-        department: deptDef.department,
-        college: deptDef.college,
-        labName,
-        researchSummary: summary,
-        skills,
-        activityScore: score,
+        piName: nextName(),
+        piTitle: pickTitle(globalIndex),
+        department: dept.department,
+        researchSummary: dept.summaryTemplate.replace("[area]", area),
       });
-
       globalIndex++;
     }
   }
-
   return result;
 }
 
-const tier2Labs = generateTier2Labs();
+// ── Main seed function ─────────────────────────────────────────────────────────
 
-// ── Insert all labs ───────────────────────────────────────────────────────────
+async function seed() {
+  console.log("Seeding researchers...");
 
-const now = new Date();
-
-// Insert Tier 1 labs
-const insertedTier1 = db
-  .insert(labs)
-  .values(
-    tier1Labs.map((l) => ({
-      piName: l.piName,
-      piTitle: l.piTitle,
-      department: l.department,
-      college: l.college,
-      labName: l.labName,
-      researchSummary: l.researchSummary,
-      labWebsite: l.labWebsite,
-      email: l.email,
-      skills: JSON.stringify(l.skills),
-      activityScore: l.activityScore,
-      createdAt: now,
-      updatedAt: now,
-    }))
-  )
-  .returning()
-  .all();
-
-const labByPi = new Map(insertedTier1.map((l) => [l.piName, l.id]));
-
-// Insert Tier 2 labs in batches
-function chunk<T>(arr: T[], size: number): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-  return out;
-}
-
-for (const batch of chunk(tier2Labs, 500)) {
-  db.insert(labs)
+  // Insert Tier 1 researchers
+  const tier1Rows = await db
+    .insert(researchers)
     .values(
-      batch.map((l) => ({
-        piName: l.piName,
-        piTitle: l.piTitle,
+      tier1Labs.map((l) => ({
+        openalex_id: `seed_${toSlug(l.piName)}`,
+        name: l.piName,
+        title: l.piTitle,
         department: l.department,
-        college: l.college,
-        labName: l.labName,
-        researchSummary: l.researchSummary,
-        labWebsite: null,
-        email: null,
-        skills: JSON.stringify(l.skills),
-        activityScore: l.activityScore,
-        createdAt: now,
-        updatedAt: now,
+        email: l.email,
+        profile_url: l.labWebsite,
+        research_summary: l.researchSummary,
       }))
     )
-    .run();
-}
+    .returning();
 
-// Insert publications
-db.insert(publications)
-  .values(
-    tier1Pubs.map((p) => ({
-      labId: labByPi.get(p.piName)!,
+  const researcherByName = new Map(tier1Rows.map((r) => [r.name, r.id]));
+
+  // Insert publications
+  await db.insert(publications).values(
+    tier1Pubs.map((p, i) => ({
+      openalex_id: `seed_pub_${i}`,
+      researcher_id: researcherByName.get(p.piName)!,
       title: p.title,
-      authors: p.authors,
-      year: p.year,
-      venue: p.venue,
-      url: p.url ?? null,
       abstract: p.abstract ?? null,
-      citations: p.citations ?? null,
+      venue: p.venue,
+      year: p.year,
+      cited_by_count: p.citations ?? 0,
     }))
-  )
-  .run();
+  );
 
-// Insert grants
-db.insert(grants)
-  .values(
+  // Insert grants
+  await db.insert(grants).values(
     tier1Grants.map((g) => ({
-      labId: labByPi.get(g.piName)!,
+      researcher_id: researcherByName.get(g.piName)!,
       title: g.title,
       funder: g.funder,
-      amount: g.amount,
-      startDate: g.startDate,
-      endDate: g.endDate,
+      amount: `$${g.amount.toLocaleString()}`,
+      year: parseInt(g.startDate.slice(0, 4)),
     }))
-  )
-  .run();
+  );
 
-// ── Summary ───────────────────────────────────────────────────────────────────
+  console.log(`✓ Seeded ${tier1Rows.length} Tier 1 researchers`);
+  console.log(`✓ Seeded ${tier1Pubs.length} publications`);
+  console.log(`✓ Seeded ${tier1Grants.length} grants`);
 
-console.log(`\n✓ Seeded ${insertedTier1.length} Tier 1 labs`);
-console.log(`✓ Seeded ${tier2Labs.length} Tier 2 labs`);
-console.log(`✓ Total: ${insertedTier1.length + tier2Labs.length} researchers`);
-console.log(`✓ Seeded ${tier1Pubs.length} publications`);
-console.log(`✓ Seeded ${tier1Grants.length} grants`);
+  // Insert Tier 2 researchers in batches
+  const tier2 = generateTier2();
+  const BATCH = 500;
 
-sqlite.pragma("foreign_keys = ON");
-sqlite.close();
+  for (let i = 0; i < tier2.length; i += BATCH) {
+    const batch = tier2.slice(i, i + BATCH);
+    await db.insert(researchers).values(
+      batch.map((r, j) => ({
+        openalex_id: `seed_t2_${i + j}`,
+        name: r.piName,
+        title: r.piTitle,
+        department: r.department,
+        research_summary: r.researchSummary,
+      }))
+    );
+  }
+
+  console.log(`✓ Seeded ${tier2.length} Tier 2 researchers`);
+  console.log(`✓ Total: ${tier1Rows.length + tier2.length} researchers`);
+
+  await client.end();
+}
+
+seed().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
