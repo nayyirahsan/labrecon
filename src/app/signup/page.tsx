@@ -31,13 +31,14 @@ export default function SignupPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [emailSent, setEmailSent] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError("");
     const supabase = createBrowserClient();
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -47,8 +48,15 @@ export default function SignupPage() {
     if (error) {
       setError(error.message);
       setLoading(false);
-    } else {
+      return;
+    }
+    if (data.session) {
+      // Email confirmation disabled — user is immediately logged in
       router.push("/onboarding");
+    } else {
+      // Email confirmation required — user must click the link first
+      setEmailSent(true);
+      setLoading(false);
     }
   }
 
@@ -58,6 +66,28 @@ export default function SignupPage() {
       provider: "google",
       options: { redirectTo: `${window.location.origin}/auth/callback` },
     });
+  }
+
+  if (emailSent) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-zinc-950 px-4">
+        <div className="w-full max-w-sm text-center">
+          <h1
+            className="text-[28px] text-zinc-100 mb-2 leading-tight"
+            style={{ fontFamily: "var(--font-display)" }}
+          >
+            Check your email
+          </h1>
+          <p className="text-[13px] text-zinc-500 mb-1">
+            We sent a confirmation link to
+          </p>
+          <p className="text-[13px] text-zinc-300 font-medium mb-6">{email}</p>
+          <p className="text-[12px] text-zinc-700">
+            Click the link to activate your account — it will take you straight to your profile setup.
+          </p>
+        </div>
+      </div>
+    );
   }
 
   return (

@@ -7,6 +7,7 @@ on:
     branches: [main]
 
 jobs:
+  # Fast static checks — no secrets needed
   lint-and-typecheck:
     runs-on: ubuntu-latest
     steps:
@@ -19,13 +20,15 @@ jobs:
       - run: npm run lint
       - run: npx tsc --noEmit
 
+  # Build check with dummy env vars — all DB/AI access is runtime-only (force-dynamic)
+  # so the build completes without real credentials
   build:
     runs-on: ubuntu-latest
     env:
       NEXT_PUBLIC_SUPABASE_URL: https://dummy.supabase.co
       NEXT_PUBLIC_SUPABASE_ANON_KEY: dummy
       COHERE_API_KEY: dummy
-      ANTHROPIC_API_KEY: dummy
+      GEMINI_API_KEY: dummy
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

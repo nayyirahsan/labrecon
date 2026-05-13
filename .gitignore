@@ -23,8 +23,14 @@
 # misc
 .DS_Store
 *.pem
+*.db
 *.db-wal
 *.db-shm
+nohup.out
+*.log
+
+# pipeline
+pipeline/__pycache__/
 
 # debug
 npm-debug.log*

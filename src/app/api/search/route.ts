@@ -2,7 +2,6 @@ import { db } from "@/lib/db";
 import { researchers, publications } from "@/lib/db/schema";
 import { sql, desc, inArray } from "drizzle-orm";
 import { generateQueryEmbedding } from "@/lib/embeddings";
-import { increment } from "@/lib/metrics";
 
 export const runtime = "nodejs";
 
@@ -21,7 +20,6 @@ export async function GET(req: Request) {
   const rawOffset = Number(url.searchParams.get("offset") ?? "0");
   const offset = Number.isFinite(rawOffset) ? Math.max(rawOffset, 0) : 0;
 
-  increment("search_requests");
   const start = Date.now();
   const search_type = q ? "semantic" : "listing";
 

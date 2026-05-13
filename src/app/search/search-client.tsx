@@ -21,6 +21,8 @@ import {
   SheetClose,
 } from "@/components/ui/sheet";
 import type { Publication, Researcher } from "@/lib/db/schema";
+import { useAuth } from "@/components/auth-provider";
+import { createBrowserClient } from "@/lib/supabase/client";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -301,6 +303,7 @@ type Props = {
 export function SearchClient({ departments, initialQuery, initialDept }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { user } = useAuth();
 
   const [query, setQuery] = useState(initialQuery);
   const [dept, setDept] = useState(initialDept || (searchParams.get("department") ?? ""));
@@ -315,9 +318,21 @@ export function SearchClient({ departments, initialQuery, initialDept }: Props) 
   const urlTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Load saved IDs — from Supabase when authenticated, localStorage otherwise
   useEffect(() => {
-    setSavedIds(getSaved());
-  }, []);
+    if (!user) {
+      setSavedIds(getSaved());
+      return;
+    }
+    const supabase = createBrowserClient();
+    supabase
+      .from("tracker_entries")
+      .select("researcher_id")
+      .eq("user_id", user.id)
+      .then(({ data }) => {
+        if (data) setSavedIds(new Set(data.map((r) => r.researcher_id as string)));
+      });
+  }, [user]);
 
   // Fresh fetch on query/dept change — resets pagination
   useEffect(() => {
@@ -371,14 +386,22 @@ export function SearchClient({ departments, initialQuery, initialDept }: Props) 
   }, [query, dept, router]);
 
   const handleSave = useCallback((id: string) => {
+    const isSaved = savedIds.has(id);
     setSavedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
-      writeSaved(next);
+      if (!user) writeSaved(next);
       return next;
     });
-  }, []);
+    if (!user) return;
+    const supabase = createBrowserClient();
+    if (isSaved) {
+      supabase.from("tracker_entries").delete().eq("researcher_id", id).eq("user_id", user.id);
+    } else {
+      supabase.from("tracker_entries").insert({ researcher_id: id, user_id: user.id, status: "saved" });
+    }
+  }, [savedIds, user]);
 
   const handleClear = useCallback(() => setDept(""), []);
 

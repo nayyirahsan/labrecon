@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { AlertCircle, ArrowUpRight, BookMarked, Check, ChevronDown, Trash2 } from "lucide-react";
+import { AlertCircle, ArrowUpRight, BookMarked, Check, ChevronDown, LogIn, Trash2 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -110,6 +110,34 @@ function FollowUpBanner({ piName, daysSinceContact }: { piName: string; daysSinc
       <p className="text-[12px] text-amber-400/90">
         <span className="font-medium">Dr. {piName.split(" ").pop()}</span> hasn&apos;t responded in {daysSinceContact} days — consider following up.
       </p>
+    </div>
+  );
+}
+
+// ── Sign-in prompt ────────────────────────────────────────────────────────────
+
+function SignInPrompt() {
+  return (
+    <div className="flex flex-col items-center justify-center py-32 gap-5">
+      <div className="size-12 flex items-center justify-center rounded-full bg-zinc-900 border border-zinc-800">
+        <LogIn size={18} className="text-zinc-700" aria-hidden="true" />
+      </div>
+      <div className="text-center">
+        <p className="text-[14px] text-zinc-400">Sign in to access your tracker.</p>
+        <p className="text-[12px] text-zinc-700 mt-1">
+          Save labs and track your outreach in one place.
+        </p>
+      </div>
+      <Link
+        href="/login?next=/tracker"
+        className={cn(
+          "inline-flex items-center gap-1.5 h-8 px-4 rounded-[4px]",
+          "text-[12px] border border-zinc-700 text-zinc-400",
+          "hover:border-zinc-500 hover:text-zinc-200 transition-colors duration-100"
+        )}
+      >
+        Sign in
+      </Link>
     </div>
   );
 }
@@ -334,7 +362,9 @@ export function TrackerClient() {
 
       {/* ── Body ────────────────────────────────────────────────── */}
       <div className="flex-1 px-4 sm:px-8 py-6">
-        {!mounted ? null : rows.length === 0 ? (
+        {!mounted ? null : !user ? (
+          <SignInPrompt />
+        ) : rows.length === 0 ? (
           <EmptyState />
         ) : (
           <div className="overflow-x-auto -mx-4 px-4 sm:-mx-8 sm:px-8">

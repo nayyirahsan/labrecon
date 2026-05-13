@@ -1,6 +1,7 @@
 name: Deploy
 
 on:
+  # Only deploy after CI passes on main — never deploy a broken build
   workflow_run:
     workflows: [CI]
     types: [completed]
@@ -19,5 +20,7 @@ jobs:
         with:
           node-version: "20"
           cache: "npm"
+      # Install Vercel CLI globally — used for deployment
       - run: npm install -g vercel
+      # Deploy to production; Vercel reads env vars from the project dashboard
       - run: vercel --prod --token=${{ secrets.VERCEL_TOKEN }}

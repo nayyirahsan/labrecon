@@ -14,7 +14,16 @@
       "Bash(curl -v --max-time 20 http://localhost:3000)",
       "Bash(node *)",
       "Bash(curl *)",
-      "Bash(npm install *)"
+      "Bash(npm install *)",
+      "Bash(npx next *)",
+      "Bash(echo \"Started with PID $!\")",
+      "Bash(kill 54742)",
+      "Bash(echo \"New PID: $!\")",
+      "Bash(python3 -m json.tool)",
+      "Bash(python3 -c ' *)",
+      "Bash(python3 /Users/Nayyi/labrecon/.next/dev/logs/next-development.log)",
+      "Bash(python3 *)",
+      "Bash(pkill -f \"next dev\")"
     ]
   }
 }

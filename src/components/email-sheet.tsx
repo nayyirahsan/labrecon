@@ -56,14 +56,12 @@ type RefPub = {
 
 const YEAR_OPTIONS = ["Freshman", "Sophomore", "Junior", "Senior", "Grad Student"];
 
-// Pre-filled fallback — used when not signed in or profile not yet saved
 const DEFAULT_PROFILE: StudentProfile = {
-  name: "Nayyir",
-  major: "Electrical and Computer Engineering",
+  name: "",
+  major: "",
   year: "Freshman",
-  skills: "Python, C++, embedded systems, data analysis",
-  interests:
-    "Interested in applying machine learning to real-world sensing and data collection problems",
+  skills: "",
+  interests: "",
 };
 
 function parseSubject(draft: string): string {

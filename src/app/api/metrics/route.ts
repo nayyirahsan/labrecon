@@ -1,6 +1,5 @@
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
-import { getCounter } from "@/lib/metrics";
 
 export const runtime = "nodejs";
 
@@ -37,7 +36,6 @@ export async function GET() {
     metric("Total indexed researchers", "labrecon_researchers_total", "gauge", rows.researchers),
     metric("Researchers with embeddings", "labrecon_researchers_with_embeddings", "gauge", rows.withEmbeddings),
     metric("Total publications indexed", "labrecon_publications_total", "gauge", rows.publications),
-    metric("Total search requests", "labrecon_search_requests_total", "counter", getCounter("search_requests")),
     metric("Total email generations", "labrecon_email_generations_total", "counter", rows.emailGenerations),
     metric("Active users in last 7 days", "labrecon_active_users_7d", "gauge", rows.activeUsers),
   ].join("\n");

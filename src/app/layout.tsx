@@ -41,8 +41,13 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const rows = await db.select({ v: count() }).from(researchers);
-  const labCount = rows[0]?.v ?? 0;
+  let labCount = 0;
+  try {
+    const rows = await db.select({ v: count() }).from(researchers);
+    labCount = rows[0]?.v ?? 0;
+  } catch {
+    // DB unavailable — sidebar still renders with count 0
+  }
 
   return (
     <html
