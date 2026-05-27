@@ -5,6 +5,7 @@ import { email_generations, publications, researchers, user_profiles } from "@/l
 import { createServerClient } from "@/lib/supabase/server";
 import { increment } from "@/lib/metrics";
 
+console.log('GEMINI_API_KEY present:', !!process.env.GEMINI_API_KEY);
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
 const DAILY_LIMIT = 5;

@@ -11,6 +11,7 @@ import { MobileHeader } from "@/components/mobile-header";
 import { PageTransition } from "@/components/page-transition";
 import { CommandPalette } from "@/components/command-palette";
 import { AuthProvider } from "@/components/auth-provider";
+import { Toaster } from "sonner";
 import "./globals.css";
 
 const geist = Geist({
@@ -73,6 +74,17 @@ export default async function RootLayout({
             <main id="main-content" className="flex-1 overflow-y-auto">
               <PageTransition>{children}</PageTransition>
             </main>
+            <Toaster
+              position="bottom-right"
+              toastOptions={{
+                style: {
+                  background: "var(--color-zinc-900, #18181b)",
+                  border: "1px solid var(--color-zinc-800, #27272a)",
+                  color: "var(--color-zinc-100, #f4f4f5)",
+                  fontSize: "13px",
+                },
+              }}
+            />
           </TooltipProvider>
         </AuthProvider>
       </body>
